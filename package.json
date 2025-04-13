@@ -1,0 +1,33 @@
+{
+  "name": "discordbot_stormworksservercontrol",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "deploy": "node deploy-commands.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/makkiilikecat/DiscordBot_StormworksServerControl.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/makkiilikecat/DiscordBot_StormworksServerControl/issues"
+  },
+  "homepage": "https://github.com/makkiilikecat/DiscordBot_StormworksServerControl#readme",
+  "description": "",
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "iconv-lite": "^0.6.3",
+    "node-fetch": "^2.7.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
