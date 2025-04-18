@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stormworksサーバー管理Bot 仕様書</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+        }
+        #sidebar {
+            width: 250px;
+            background: #333;
+            color: #fff;
+            padding: 15px;
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+        }
+        #sidebar h2 {
+            color: #fff;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        #sidebar ul {
+            list-style: none;
+            padding: 0;
+        }
+        #sidebar ul li a {
+            color: #ccc;
+            text-decoration: none;
+            display: block;
+            padding: 10px 15px;
+            border-radius: 4px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        #sidebar ul li a:hover, #sidebar ul li a.active {
+            background-color: #555;
+            color: #fff;
+        }
+        #main-content {
+            margin-left: 265px; /* Sidebar width + margin */
+            padding: 20px;
+            width: calc(100% - 265px);
+        }
+        header {
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        header h1 {
+            color: #333;
+            margin: 0;
+        }
+        header p {
+            color: #666;
+            margin: 5px 0 0 0;
+        }
+        section {
+            background: #fff;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+            margin-top: 0;
+        }
+        h3 {
+            color: #444;
+            margin-top: 30px;
+        }
+        h4 {
+            color: #555;
+            margin-top: 20px;
+            font-weight: 600;
+        }
+        ul {
+            margin-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        code {
+            background-color: #eee;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap; /* コードの折り返し */
+            word-wrap: break-word;
+        }
+        .status {
+            font-weight: bold;
+            padding: 3px 8px;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.85em;
+        }
+        .status-implemented { background-color: #28a745; } /* Green */
+        .status-partial { background-color: #ffc107; color: #333;} /* Yellow */
+        .status-todo { background-color: #dc3545; } /* Red */
+        .status-issue { background-color: #ffc107; color: #333;} /* Yellow */
+        .collapsible {
+            background-color: #f1f1f1;
+            color: #444;
+            cursor: pointer;
+            padding: 10px;
+            width: 100%;
+            border: none;
+            text-align: left;
+            outline: none;
+            font-size: 1em;
+            margin-top: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .collapsible:hover {
+            background-color: #ddd;
+        }
+        .collapsible:after {
+            content: '\\002B'; /* Unicode character for "plus" sign (+) */
+            font-size: 1.1em;
+            color: #777;
+            float: right;
+            margin-left: 5px;
+        }
+        .collapsible.active:after {
+            content: "\\2212"; /* Unicode character for "minus" sign (-) */
+        }
+        .content {
+            padding: 0 18px;
+            display: none;
+            overflow: hidden;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .tag {
+            display: inline-block;
+            background-color: #e0e0e0;
+            color: #333;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            margin-right: 5px;
+            font-family: Consolas, Monaco, monospace;
+        }
+
+        /* Responsive layout */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            #sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+            #main-content {
+                margin-left: 0;
+                width: 100%;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>仕様書</h2>
+    <ul>
+        <li><a href="#overview" class="active">概要</a></li>
+        <li><a href="#discord-bot">Discord Bot 仕様</a></li>
+        <li><a href="#go-client">Go クライアント 仕様</a></li>
+        <li><a href="#protocol">通信プロトコル</a></li>
+        <li><a href="#issues">課題と今後</a></li>
+    </ul>
+</div>
+
+<div id="main-content">
+    <header>
+        <h1>Stormworksサーバー管理Bot 仕様書</h1>
+        <p>最終更新日: <span id="last-updated"></span></p>
+    </header>
+
+    <section id="overview">
+        <h2>1. 概要</h2>
+        <p>このプロジェクトは、Discordボットを通じて、物理サーバー上で動作するゲームサーバー（主にStormworksを想定）の起動、停止、および基本的な管理を行うことを目的としています。</p>
+        <p>ユーザーはDiscordのチャットコマンドを使用して、ボットに指示を出し、ボットはWebSocketを介して物理サーバー上で動作するGo言語製のクライアントと通信し、ゲームサーバープロセスを操作します。</p>
+
+        <h3>アーキテクチャ</h3>
+        <p>システムは以下のコンポーネントで構成されます:</p>
+        <ul>
+            <li><strong>Discord Bot:</strong> Node.js (discord.js v14.18.0) で実装。ユーザーインターフェース、コマンド処理、WebSocketサーバー機能、状態管理を担当。</li>
+            <li><strong>WebSocket通信:</strong> DiscordボットとGoクライアント間の双方向通信路。JSON形式でメッセージを送受信。</li>
+            <li><strong>Go Client:</strong> Go言語で実装。物理サーバー上で動作し、Discordボットからの指示を受けてゲームサーバープロセスの起動・停止、設定ファイルの管理を行うWebSocketクライアント。</li>
+            <li><strong>Game Server Process:</strong> 実際に動作するゲームサーバーのプロセス（例: Stormworks Dedicated Server）。</li>
+        </ul>
+        <pre><code>
+[Discord User] <-- Discord API --> [Discord Bot (Node.js)] <-- WebSocket --> [Go Client (Go)] <-- OS Commands --> [Game Server Process]
+                                       |                                          |
+                                    (State: serverInstances)                   (Manages: runningProcs)
+        </code></pre>
+
+        <h3>主な機能</h3>
+        <ul>
+            <li><strong>物理サーバー登録:</strong> `/sws register_my_server` コマンドで認証トークンを発行し、物理サーバーをボットに登録。</li>
+            <li><strong>サーバー起動:</strong> `/sws start [構成名]` コマンドで、設定ファイルを指定し、接続中の物理サーバーから起動先を選択してゲームサーバーを起動。</li>
+            <li><strong>サーバー停止:</strong> `/sws stop [構成名]` コマンドで、指定したゲームサーバーを停止。プレイヤーがいる場合は確認ステップを挟む。</li>
+            <li><strong>状態同期:</strong> Goクライアント接続時に、ボット側のサーバー状態と物理サーバー側の状態を同期し、不整合があれば自動調整。</li>
+            <li><strong>自動クリーンアップ:</strong> 物理サーバーとの接続が一定時間切断された場合、関連するサーバーインスタンス情報を自動的に整理。</li>
+        </ul>
+    </section>
+
+    <section id="discord-bot">
+        <h2>2. Discord Bot 仕様 (Node.js / discord.js)</h2>
+        <p>ユーザーからのコマンドを受け付け、Goクライアントとの通信を仲介し、全体の状態を管理します。</p>
+        <p><span class="tag">使用技術:</span> Node.js, discord.js v14.18.0, ws, dotenv, crypto</p>
+
+        <h3>主な機能と実装状況</h3>
+
+        <button type="button" class="collapsible">コマンド: /sws register_my_server</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>実行ユーザーに対して一意な認証トークンを生成する。</li>
+                <li>生成したトークンをユーザーのDMに送信する。</li>
+                <li>生成したトークン、作成者ID、作成日時などを安全なストレージ (例: `tokens.json`) に保存する。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-implemented">実装済み</span></h4>
+            <ul>
+                <li><code>commands/sws/subcommands/register_my_server.js</code> でコマンドロジックを実装。</li>
+                <li><code>commands/sws/subcommands/utility/token_manager.js</code> でトークン生成、保存、DM送信処理を実装。</li>
+                <li>トークン情報は指定されたJSONファイルに保存される。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>トークン管理 (有効期限切れ削除など) は実装済み。</li>
+                <li>大量リクエストに対するレートリミットなどのセキュリティ対策を検討。</li>
+                <li>DM送信失敗時の代替手段や、より丁寧なエラーハンドリング。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">コマンド: /sws start [name]</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>指定された構成名 (`name`) の設定ファイルが存在するか確認する。</li>
+                <li>接続中の物理サーバー (Goクライアント) のリストを取得し、ユーザーにドロップダウンメニューで提示する。</li>
+                <li>ユーザーが選択した物理サーバー (ClientID) に、設定ファイルの内容を含めてゲームサーバー起動要求を送信する。</li>
+                <li>物理サーバーからの応答を待機する (タイムアウト処理を含む)。</li>
+                <li>起動準備中のメッセージを表示し、最終的な結果 (成功/失敗) でそのメッセージを編集する。</li>
+                <li>ユーザーにはIPアドレスやClientIDなどの内部情報を表示しない。サーバーは登録者名と番号で識別する。</li>
+                <li>物理サーバー側でクラッシュ等により自動再起動が発生した場合、その旨を元のコマンド実行者に通知する。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-partial">部分的実装</span></h4>
+            <ul>
+                <li><code>commands/sws/sub_commands/start.js</code> で実装。</li>
+                <li>設定ファイルの存在確認 <span class="status status-implemented">実装済み</span>。</li>
+                <li>接続中クライアント取得とドロップダウン表示 (ユーザー名+番号、ClientIDを値とする) <span class="status status-implemented">実装済み</span>。</li>
+                <li>起動要求送信 (ClientID使用) <span class="status status-implemented">実装済み</span>。</li>
+                <li>応答待機 (1分タイムアウト) <span class="status status-implemented">実装済み</span>。</li>
+                <li>結果通知 (メッセージ編集、Embed使用、情報隠蔽) <span class="status status-implemented">実装済み</span>。</li>
+                <li>自動再起動通知 <span class="status status-todo">TODO</span> (WebSocketイベントハンドリングが必要)。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>自動再起動通知機能の実装。WebSocketサーバーで `serverEvent` (type: `autoRestart`) を受信し、対応する `start` コマンドのインタラクション (またはメッセージ) に返信する仕組みが必要。</li>
+                <li>インタラクションオブジェクトやメッセージIDを `serverInstances` Map に保存し、後から参照できるようにする必要がある。</li>
+                <li>より詳細なエラーハンドリング（ネットワークエラー、設定ファイル読み込みエラーなど）。</li>
+                <li>`getServerIdentifiers` 関数の共通化 (`stop.js` と共通)。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">コマンド: /sws stop [name]</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>指定された構成名 (`name`) のサーバーが `serverInstances` Map 上で実行中か確認する。</li>
+                <li>実行中の場合、対応する物理サーバー (ClientID) に停止要求を送信する。</li>
+                <li>物理サーバーからプレイヤー存在による確認要求 (`requiresConfirmation: true`) が返ってきた場合、ユーザーに確認ボタン (はい/いいえ) を提示する。</li>
+                <li>ユーザーが「はい」を選択した場合、確認済みフラグを立てて再度停止要求を送信する。</li>
+                <li>確認が不要な場合、または確認後に停止処理を実行し、物理サーバーからの最終結果 (成功/失敗、設定ファイル保存状況) を待つ。</li>
+                <li>応答メッセージ（コマンド応答またはボタン応答）を編集して最終結果を通知する。</li>
+                <li>ユーザーにはIPアドレスやClientID、詳細なエラーを表示しない。</li>
+                <li>成功した場合、`serverInstances` Map の状態を更新する。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-implemented">実装済み</span></h4>
+            <ul>
+                <li><code>commands/sws/sub_commands/stop.js</code> で実装。</li>
+                <li>`serverInstances` Map からの状態確認 (前提)。</li>
+                <li>初回停止要求送信 (確認フラグ `false`)。</li>
+                <li>確認要求受信時のボタン表示 (`editReply` 使用)。</li>
+                <li>ボタンインタラクション処理 (`handleStopConfirmation`)。</li>
+                <li>確認後停止要求送信 (確認フラグ `true`)。</li>
+                <li>結果通知 (メッセージ編集、Embed使用、情報隠蔽)。</li>
+                <li>`serverInstances` Map の更新 (削除または `status` 変更)。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>`serverInstances` Map との連携部分の堅牢性。</li>
+                <li>`serverUtils.stopServer` およびGoクライアント側での確認フラグ (`confirmed`) の実装が前提となっている。</li>
+                <li>`getServerIdentifiers` 関数の共通化 (`start.js` と共通)。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">トークン管理 (token_manager.js)</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>安全なトークンの生成 (`crypto.randomBytes`)。</li>
+                <li>トークン情報 (トークン、作成者ID、作成日時、接続回数、最終接続日時) のJSONファイルへの保存・読み込み。</li>
+                <li>ファイルが存在しない、空、不正なJSONの場合でも安全に処理。</li>
+                <li>トークン検証機能。検証成功時に接続情報を更新。</li>
+                <li>ボット起動時に、一定期間 (3日) 一度も使用されていないトークンを自動削除する機能。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-implemented">実装済み</span></h4>
+            <ul>
+                <li><code>commands/sws/subcommands/utility/token_manager.js</code> で全て実装済み。</li>
+                <li>ファイルI/Oの堅牢性向上済み (`loadTokens` の修正)。</li>
+                <li>未使用トークンの削除ロジック実装済み (`checkTokens`)。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>トークン数が非常に多くなった場合の `tokens.json` の読み書きパフォーマンス。大規模運用の場合はDB等への移行を検討。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">WebSocketサーバー (websocket_server.js)</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>指定ポートでWebSocketサーバーを起動・停止する。</li>
+                <li>接続時にリクエストヘッダーからトークンを取得し、`token_manager.js` を使って認証する。認証失敗時は接続を拒否。</li>
+                <li>接続中のクライアント情報 (内部ClientID、物理サーバーID、IP、登録者CreatorID、WebSocketオブジェクトなど) を管理する (`clients` Map)。</li>
+                <li>クライアントからのメッセージ (JSON) を受信・処理する。</li>
+                <li>クライアントへのメッセージ (JSON) を送信する (`sendPacket` で応答待ち、`sendToClient` で通知)。</li>
+                <li>定期的なPing送信とPong応答による生存確認。タイムアウトしたクライアントは切断。</li>
+                <li>クライアント接続時に状態同期メッセージ (`syncStatus`) を受信し、`serverInstances` Map と比較・同期・自動調整を行う。</li>
+                <li>クライアント切断後、一定時間 (10分) 再接続がなければ、関連する `serverInstances` をクリーンアップするタイマー処理。</li>
+                <li>物理サーバーを一意に識別する方法 (現状 `creatorId-ip` を仮使用)。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-implemented">実装済み</span></h4>
+            <ul>
+                <li>サーバー起動/停止 (`startWebSocket`, `stopWebSocket`)。</li>
+                <li>トークン認証 (`handleConnection`)。</li>
+                <li>クライアント管理 (`clients` Map、`physicalServerId` 導入)。</li>
+                <li>メッセージ送受信 (`handleMessage`, `sendToClient`, `sendPacket`)。</li>
+                <li>Ping/Pongによる生存確認とタイムアウト処理 (`startPingInterval`, `handlePong`)。</li>
+                <li>状態同期ロジック (`synchronizeServerState` を `handleMessage` 内で呼び出し)。</li>
+                <li>切断後のタイムアウト処理 (`cleanupClient`, `disconnectTimers`)。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>**物理サーバーIDの堅牢性:** `creatorId-ip` はIPアドレスが変わると別サーバー扱いになる。Goクライアントから永続的な一意ID (マシンUUIDなど) を送ってもらう方が望ましい。</li>
+                <li>**`serverInstances` Map の依存性:** 現在は外部からの注入を前提としているが、より明確な依存関係管理が必要。</li>
+                <li>**エラーハンドリング:** ネットワークエラー、プロトコル違反など、より詳細なエラーハンドリングとログ記録。</li>
+                <li>**スケーラビリティ:** 大量 (数百) のクライアントが同時接続した場合のパフォーマンスとリソース消費。</li>
+                <li>**保留中リクエスト管理:** `rejectPendingRequests` が切断時に全ての保留中リクエストを失敗させるのは不正確。リクエストごとに対象クライアントを特定する必要がある。</li>
+                <li>`getConnectedClients` が返す情報に `physicalServerId` などが追加されたが、利用箇所での調整が必要な場合がある。</li>
+            </ul>
+        </div>
+
+         <button type="button" class="collapsible">サーバー操作ユーティリティ (server_utils.js)</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>`websocket_server.sendPacket` を使用して、物理サーバー (ClientID指定) にゲームサーバー起動要求 (`startServer`) を送信する。要求には構成名と設定ファイル内容 (XML文字列) を含める。</li>
+                <li>`websocket_server.sendPacket` を使用して、物理サーバーにゲームサーバー停止要求 (`stopServer`) を送信する。要求には構成名と確認済みフラグ (`confirmed`) を含める。</li>
+                <li>`startServer` では、ローカルの設定ファイルを読み込む機能 (`loadConfig`) を持つ。</li>
+                <li>`stopServer` では、物理サーバーからの応答に含まれる更新された設定ファイル (XML文字列) を受け取り、`validateServerConfig` 関数で検証後、ローカルに保存 (`saveConfig`) する機能を持つ。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-partial">部分的実装</span></h4>
+            <ul>
+                <li><code>commands/sws/sub_commands/utility/server_utils.js</code> で実装。</li>
+                <li>`startServer` 実装済み (`loadConfig` 含む)。</li>
+                <li>`stopServer` 実装済み (ただし、`confirmed` フラグの引数受け入れとペイロードへの追加が前提)。応答内の設定ファイル検証・保存ロジック実装済み。</li>
+                <li>設定ファイルの読み込み (`loadConfig`)、保存 (`saveConfig`) 実装済み。ディレクトリ自動作成含む。</li>
+                <li>`validateServerConfig` は現在**プレースホルダー** <span class="status status-todo">TODO</span>。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-todo">TODOあり</span></h4>
+            <ul>
+                <li>**`validateServerConfig` の実装:** 実際の `server_config.xml` の仕様に基づいた検証ロジックを実装する必要がある (XMLパーサーライブラリ等を使用)。</li>
+                <li>**`stopServer` の `confirmed` フラグ:** 引数で `confirmed` を受け取り、`sendPacket` で送信するペイロードに含める修正が必要（コード例は提示済みだが、最終確認が必要）。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">状態管理 (serverInstances Map)</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>ボット全体で、起動中のサーバーインスタンスの状態を一元管理する。</li>
+                <li>Mapのキーは構成名 (`instanceName`)。</li>
+                <li>値には、少なくとも `clientId` (現在の接続ID)、`physicalServerId` (物理サーバー識別ID)、`ip`、`creatorId`、`status` ('running', 'stopped', 'starting', 'stopping' など)、`name` (構成名) を含むオブジェクトを保持する。</li>
+                <li>必要に応じて、`/sws start` コマンドのインタラクションIDやメッセージIDなども保持し、後続処理 (自動再起動通知など) で利用する。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-todo">Bot本体依存</span></h4>
+            <ul>
+                <li>Map自体の定義と管理は、ボットのメインファイル (`index.js` など) や専用の状態管理モジュールで行う必要がある。</li>
+                <li>`start.js`, `stop.js`, `websocket_server.js` は、このMapが存在し、必要な情報が格納/更新されることを前提として実装されている。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>**永続化:** ボットが再起動するとMapの内容は失われる。再起動後も状態を保持するには、ファイルやデータベースへの永続化が必要。`tokens.json` のようにJSONファイルに定期的に保存するか、DB (SQLite, Redisなど) の利用を検討。</li>
+                <li>**アクセス競合:** Node.jsは基本的にシングルスレッドだが、非同期処理のタイミングによっては意図しない状態になる可能性がないか注意。特に複雑な状態更新を行う場合。</li>
+                <li>状態の種類 (`status`) を明確に定義し、遷移を管理する。</li>
+            </ul>
+        </div>
+
+        <h3>冗長な実装 / 改善の余地</h3>
+        <ul>
+            <li><span class="status status-issue">改善の余地あり</span> **`getServerIdentifiers` 関数の共通化:** `start.js` と `stop.js` で同様のロジックが実装されているため、共通のユーティリティ関数として切り出すべき。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **エラーハンドリング:** 各モジュールで個別にエラーハンドリングしている箇所が多い。共通のエラークラスやハンドリング関数を導入することで、コードの重複を減らし、一貫性を保てる。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **状態管理の堅牢性:** 上述の通り、`serverInstances` Map の永続化は重要な改善点。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **設定管理:** `registry.js` や `.env` で管理している設定項目が増えてきた場合、より体系的な管理方法（設定ファイルクラスなど）を検討。</li>
+        </ul>
+    </section>
+
+    <section id="go-client">
+        <h2>3. Go クライアント 仕様 (物理サーバー側)</h2>
+        <p>物理サーバー上で動作し、Discordボットからの指示を受けてゲームサーバープロセスを管理します。</p>
+        <p><span class="tag">使用技術:</span> Go, github.com/gorilla/websocket, github.com/joho/godotenv, os/exec</p>
+
+        <h3>主な機能と実装状況</h3>
+
+        <button type="button" class="collapsible">接続管理</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>起動時に `.env` ファイルからゲームサーバー実行パス (`SERVER_EXE_PATH`) と認証トークン (`TOKEN`) を読み込む。</li>
+                <li>指定されたWebSocketサーバーURL (`ws://sw-server.makkii.jp:8080`) に接続を試みる。</li>
+                <li>接続リクエスト時に `Authorization: Bearer <TOKEN>` ヘッダーを付与する。</li>
+                <li>接続失敗時や切断時には、一定間隔 (10秒) で自動的に再接続を試みる。</li>
+                <li>サーバーから認証トークン拒否で切断された場合 (Close Code 1008など) は、エラーメッセージを出力し、再接続試行を停止する。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-implemented">実装済み</span></h4>
+            <ul>
+                <li><code>main.go</code> で実装済み。</li>
+                <li>`.env` 読み込み、WebSocket接続、認証ヘッダー付与、自動再接続ロジック実装済み。</li>
+                <li>トークン拒否時の再接続停止ロジック実装済み (`websocket.CloseError` のコードを確認)。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-issue">改善の余地あり</span></h4>
+            <ul>
+                <li>Cloudflare Tunnel経由の接続となるため、ネットワークの不安定性に対する耐性強化 (タイムアウト値の調整など)。</li>
+                <li>接続エラーの種類に応じた、より詳細なログ出力やエラーハンドリング。</li>
+                <li>永続的な物理サーバーIDの生成と `syncStatus` での送信 (現状未実装)。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">状態同期</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>WebSocket接続確立後、最初のメッセージとして、現在自身が管理している起動中のゲームサーバー構成名のリストをボットに送信する。</li>
+                <li>メッセージ形式: `{ type: 'syncStatus', payload: { runningServers: ["config1", "config2"] } }`</li>
+            </ul>
+            <h4>実装状況 <span class="status status-todo">TODO</span></h4>
+            <ul>
+                <li>現在の `main.go` にはこの機能は実装されていない。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-todo">TODO</span></h4>
+            <ul>
+                <li>Goクライアント内で、現在どの構成 (`name`) のプロセスが実行中かを正確に管理する (`runningProcs` Map) 必要がある。</li>
+                <li>接続成功直後に、`runningProcs` のキーリストを取得し、`syncStatus` メッセージを構築して送信するロジックを追加する必要がある。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">メッセージハンドリング</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>ボットからの `startServer` 要求 (構成名、設定XML含む) を受信し、処理する (`handleStartServer`)。</li>
+                <li>ボットからの `stopServer` 要求 (構成名、確認済みフラグ含む) を受信し、処理する (`handleStopServer`)。</li>
+                <li>サーバーからのPingメッセージにPongメッセージで応答する。</li>
+                <li>処理結果 (成功/失敗、メッセージ、停止時は設定XML) を、元の要求ID (`requestId`) を含めてボットに応答する。</li>
+                <li>プレイヤーが存在する場合、`stopServer` 要求 (確認フラグ `false`) に対して `needsConfirmation: true` とプレイヤー数を含む応答を返す。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-partial">部分的実装</span></h4>
+            <ul>
+                <li><code>main.go` の `readMessages`, `handleStartServer`, `handleStopServer` で実装。</li>
+                <li>`startServer` 要求の処理 (ファイル保存、プロセス起動、応答) <span class="status status-implemented">実装済み</span>。</li>
+                <li>`stopServer` 要求の処理 (プロセス停止、設定ファイル読み込み、応答) <span class="status status-implemented">実装済み</span>。</li>
+                <li>Ping応答は `gorilla/websocket` がデフォルトで対応 (明示的なハンドラも設定済み)。</li>
+                <li>処理結果の応答 (RequestId含む) <span class="status status-implemented">実装済み</span>。</li>
+                <li>`stopServer` の確認済みフラグ (`confirmed`) の処理 <span class="status status-todo">TODO</span>。</li>
+                <li>プレイヤー数検知と `needsConfirmation` 応答 <span class="status status-todo">TODO</span> (ゲームサーバーとの連携が必要)。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-todo">TODOあり</span></h4>
+            <ul>
+                <li>**`stopServer` の `confirmed` フラグ対応:** ペイロードから `confirmed` を読み取り、`true` の場合はプレイヤー数チェックをスキップして強制停止するロジックを追加する必要がある。</li>
+                <li>**プレイヤー数検知:** ゲームサーバー自体に現在接続中のプレイヤー数を問い合わせる仕組みが必要 (ゲームの種類に依存する。Stormworksの場合、ログ監視やRCONなどが必要になる可能性)。</li>
+                <li>エラー応答のメッセージをより具体的にし、問題解決に役立つ情報を含める。</li>
+            </ul>
+        </div>
+
+        <button type="button" class="collapsible">プロセス管理</button>
+        <div class="content">
+            <h4>要件</h4>
+            <ul>
+                <li>`startServer` 要求時に、指定された実行パス (`SERVER_EXE_PATH`) と引数 (`+server_dir`) を使用してゲームサーバープロセスを別プロセスとして起動する。</li>
+                <li>起動したプロセスを構成名 (`name`) と紐付けて管理する (`runningProcs` Map)。Mapアクセスはスレッドセーフに行う (Mutex使用)。</li>
+                <li>`stopServer` 要求時に、指定された構成名に対応するプロセスを特定し、適切に停止 (Kill) する。</li>
+                <li>設定ファイル (`server_config.xml`) を `/config/[構成名]/` ディレクトリに保存・読み込み・削除する。ディレクトリも管理する。</li>
+                <li>起動したプロセスが予期せず終了した場合 (クラッシュなど) を検知する (任意だが推奨)。</li>
+            </ul>
+            <h4>実装状況 <span class="status status-partial">部分的実装</span></h4>
+            <ul>
+                <li><code>main.go</code> で実装。</li>
+                <li>`os/exec` を用いたプロセス起動、`runningProcs` Map (Mutex保護) での管理 <span class="status status-implemented">実装済み</span>。</li>
+                <li>プロセスの停止 (`process.Kill`, `process.Wait`) <span class="status status-implemented">実装済み</span> (Waitの戻り値処理修正済み)。</li>
+                <li>設定ファイルとディレクトリの基本的な管理 (作成、書き込み、読み込み、削除) <span class="status status-implemented">実装済み</span>。</li>
+                <li>プロセス終了の待機 (`go func(...) { process.Wait() }`) は実装されているが、クラッシュ検知とBotへの通知は未実装 <span class="status status-todo">TODO</span>。</li>
+            </ul>
+            <h4>課題・改善点 <span class="status status-todo">TODOあり</span></h4>
+            <ul>
+                <li>**クラッシュ検知と通知:** `process.Wait()` がエラーを返した場合に、それを検知し、`serverEvent` (例: `{ eventType: 'crash', payload: { name: 'configName', error: '...' } }`) をWebSocketでボットに送信する機能を追加する。</li>
+                <li>**プロセス停止方法:** `process.Kill()` は強制終了。可能であれば、より穏やかな停止方法（例: ゲームサーバー固有の停止コマンド送信）を検討。</li>
+                <li>設定ディレクトリパス (`./config`) の柔軟性。絶対パス指定や設定ファイルでの指定を可能にする。</li>
+                <li>OS間の差異（パス区切り文字、コマンド実行方法など）への対応強化。</li>
+            </ul>
+        </div>
+
+        <h3>冗長な実装 / 改善の余地</h3>
+        <ul>
+            <li><span class="status status-issue">改善の余地あり</span> **エラーハンドリング:** ネットワーク、ファイルI/O、プロセス実行など、各所でエラーハンドリングを強化し、共通化できる部分はまとめる。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **プロセス管理:** プロセス起動・停止・監視のロジックを別パッケージに切り出し、`main.go` をシンプルにする。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **設定管理:** `.env` だけでなく、設定ファイル (例: YAML, TOML) を導入し、より多くの設定項目（ログレベル、タイムアウト値など）を管理しやすくする。</li>
+        </ul>
+    </section>
+
+    <section id="protocol">
+        <h2>4. 通信プロトコル (WebSocket)</h2>
+        <p>Discordボット (サーバー) と Goクライアント間の通信規約です。</p>
+        <p><span class="tag">形式:</span> WebSocket (<code>ws://</code> または <code>wss://</code>)</p>
+        <p><span class="tag">メッセージ形式:</span> JSON</p>
+        <p><span class="tag">基本構造:</span> <code>{ "type": "string", "requestId"?: "string", "payload": object }</code></p>
+
+        <h3>メッセージタイプ</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>方向</th>
+                    <th>Type</th>
+                    <th>Payload</th>
+                    <th>説明</th>
+                    <th>状態</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Go -> Bot</td>
+                    <td><code>syncStatus</code></td>
+                    <td><code>{ runningServers: string[] }</code></td>
+                    <td>接続確立後、最初に送信。現在起動中のサーバー構成名リスト。</td>
+                    <td><span class="status status-todo">Go側TODO</span></td>
+                </tr>
+                <tr>
+                    <td>Go -> Bot</td>
+                    <td><code>response</code></td>
+                    <td><code>{ success: boolean, message: string, config?: string, needsConfirmation?: boolean, players?: number }</code></td>
+                    <td>Botからの要求 (start/stop) に対する応答。RequestIdが必要。</td>
+                    <td><span class="status status-partial">実装済み (一部TODO)</span></td>
+                </tr>
+                <tr>
+                    <td>Go -> Bot</td>
+                    <td><code>error</code></td>
+                    <td><code>{ message: string }</code></td>
+                    <td>Goクライアント内部で発生した処理エラーの通知。RequestIdを含む場合あり。</td>
+                    <td><span class="status status-implemented">実装済み</span></td>
+                </tr>
+                 <tr>
+                    <td>Go -> Bot</td>
+                    <td><code>serverEvent</code></td>
+                    <td><code>{ eventType: string, data: any }</code></td>
+                    <td>ゲームサーバーのイベント通知 (例: クラッシュ、自動再起動)。</td>
+                    <td><span class="status status-todo">TODO</span></td>
+                </tr>
+                 <tr>
+                    <td>Bot -> Go</td>
+                    <td><code>connected</code></td>
+                    <td><code>{ clientId: string, physicalServerId: string }</code></td>
+                    <td>WebSocket接続成功と各種IDの通知。</td>
+                    <td><span class="status status-implemented">実装済み</span></td>
+                </tr>
+                <tr>
+                    <td>Bot -> Go</td>
+                    <td><code>startServer</code></td>
+                    <td><code>{ name: string, config: string }</code></td>
+                    <td>ゲームサーバー起動要求。RequestIdが必要。</td>
+                    <td><span class="status status-implemented">実装済み</span></td>
+                </tr>
+                 <tr>
+                    <td>Bot -> Go</td>
+                    <td><code>stopServer</code></td>
+                    <td><code>{ name: string, confirmed?: boolean }</code></td>
+                    <td>ゲームサーバー停止要求。RequestIdが必要。`confirmed` は確認ステップ用。</td>
+                    <td><span class="status status-partial">実装済み (confirmed対応要)</span></td>
+                </tr>
+                 <tr>
+                    <td>Bot -> Go</td>
+                    <td><code>error</code></td>
+                    <td><code>{ message: string }</code></td>
+                    <td>Bot内部で発生したエラーの通知 (例: 不正なメッセージ受信)。</td>
+                    <td><span class="status status-implemented">実装済み</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>主要フロー</h3>
+        <button type="button" class="collapsible">状態同期フロー</button>
+        <div class="content">
+            <ol>
+                <li>GoクライアントがWebSocket接続を確立 (認証含む)。</li>
+                <li>Goクライアントが <code>{ type: 'syncStatus', payload: { runningServers: [...] } }</code> を送信。</li>
+                <li>Discordボットが <code>syncStatus</code> を受信し、<code>synchronizeServerState</code> 関数を実行。</li>
+                <li>初回接続か再接続かで処理を分岐し、<code>serverInstances</code> Map を更新または調整 (不整合があればGoに停止要求)。</li>
+                <li>同期完了。</li>
+            </ol>
+        </div>
+        <button type="button" class="collapsible">サーバー起動フロー</button>
+        <div class="content">
+            <ol>
+                <li>ユーザーがDiscordで <code>/sws start [name]</code> を実行。</li>
+                <li>ボットが接続中の物理サーバーリストから選択肢を提示。</li>
+                <li>ユーザーが起動先サーバーを選択。</li>
+                <li>ボットが <code>interaction.update</code> で「起動準備中」メッセージ表示。</li>
+                <li>ボットが選択されたClientIDに <code>{ type: 'startServer', requestId: '...', payload: { name: '...', config: '...' } }</code> を送信。</li>
+                <li>Goクライアントが受信し、設定ファイルを保存、ゲームサーバープロセスを起動。</li>
+                <li>Goクライアントが <code>{ type: 'response', requestId: '...', payload: { success: true/false, message: '...' } }</code> を送信。</li>
+                <li>ボットが応答を受信し、<code>interaction.editReply</code> で結果を表示。</li>
+            </ol>
+        </div>
+         <button type="button" class="collapsible">サーバー停止フロー (確認あり)</button>
+        <div class="content">
+            <ol>
+                <li>ユーザーがDiscordで <code>/sws stop [name]</code> を実行。</li>
+                <li>ボットが <code>serverInstances</code> から対象サーバーのClientIDを取得。</li>
+                <li>ボットが <code>interaction.deferReply</code>。</li>
+                <li>ボットが対象ClientIDに <code>{ type: 'stopServer', requestId: '...', payload: { name: '...', confirmed: false } }</code> を送信。</li>
+                <li>Goクライアントが受信し、プレイヤー数を確認 (仮定)。</li>
+                <li>Goクライアントが <code>{ type: 'response', requestId: '...', payload: { success: false, message: 'プレイヤーあり', needsConfirmation: true, players: 5 } }</code> を送信。</li>
+                <li>ボットが応答を受信し、<code>interaction.editReply</code> で確認ボタンを表示。</li>
+                <li>ユーザーが「はい、停止します」ボタンをクリック。</li>
+                <li>ボットがボタンインタラクションを処理 (<code>interaction.update</code> で「停止実行中」表示)。</li>
+                <li>ボットが対象ClientIDに <code>{ type: 'stopServer', requestId: '...', payload: { name: '...', confirmed: true } }</code> を送信。</li>
+                <li>Goクライアントが受信し、<code>confirmed: true</code> のため強制停止を実行。設定ファイルを読み込む。</li>
+                <li>Goクライアントが <code>{ type: 'response', requestId: '...', payload: { success: true, message: '停止完了', config: '...' } }</code> を送信。</li>
+                <li>ボットが応答を受信し、<code>interaction.editReply</code> で最終結果を表示。設定ファイルを検証・保存。<code>serverInstances</code> を更新。</li>
+            </ol>
+        </div>
+    </section>
+
+    <section id="issues">
+        <h2>5. 課題と今後</h2>
+        <p>現在認識されている課題と、今後の改善・実装項目です。</p>
+
+        <h3>実装 TODO</h3>
+        <ul>
+            <li><span class="status status-todo">Go</span> 状態同期のための <code>syncStatus</code> メッセージ送信機能。</li>
+            <li><span class="status status-todo">Go</span> <code>stopServer</code> 要求処理での <code>confirmed</code> フラグ対応。</li>
+            <li><span class="status status-todo">Go</span> プレイヤー数検知と `needsConfirmation` 応答機能 (ゲーム依存)。</li>
+            <li><span class="status status-todo">Go</span> ゲームサーバープロセスのクラッシュ検知と、Botへの `serverEvent` 通知機能。</li>
+            <li><span class="status status-todo">Bot</span> `serverEvent` (クラッシュ、自動再起動など) 受信時の処理とユーザー通知機能。</li>
+            <li><span class="status status-todo">Bot</span> `validateServerConfig` 関数の具体的な実装 (XML検証)。</li>
+            <li><span class="status status-todo">Bot</span> `serverInstances` Map の永続化 (ファイル保存 or DB利用)。</li>
+            <li><span class="status status-todo">Bot</span> ユーティリティ関数 (`getServerIdentifiers` など) の共通化。</li>
+        </ul>
+
+        <h3>改善点</h3>
+        <ul>
+            <li><span class="status status-issue">改善の余地あり</span> **物理サーバーIDの堅牢化:** `creatorId-ip` 以外の永続的なIDを使用する方式を検討。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **エラーハンドリング:** Bot/Go両方で、エラーの種類に応じたより詳細なハンドリングとログ記録、ユーザーへの分かりやすいフィードバック。</li>
+             <li><span class="status status-issue">改善の余地あり</span> **セキュリティ:** コマンド実行権限、トークン管理、入力検証、レートリミットなど、セキュリティ面での考慮を強化。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **テスト:** 単体テスト、結合テストを導入し、品質を向上させる。</li>
+            <li><span class="status status-issue">改善の余地あり</span> **UI/UX:** Discord上のコマンド応答やEmbedメッセージをより洗練させ、ユーザー体験を向上させる。</li>
+             <li><span class="status status-issue">改善の余地あり</span> **設定管理:** Go/Bot両方で、設定ファイルを用いた柔軟な設定管理。</li>
+        </ul>
+
+        <h3>既知の課題</h3>
+        <ul>
+            <li><span class="status status-issue">課題あり</span> **保留中リクエストの管理:** `websocket_server.js` の `rejectPendingRequests` は、切断時に無関係なリクエストも失敗させる可能性がある。リクエストごとに対象クライアントを特定・管理する仕組みが必要。</li>
+            <li><span class="status status-issue">課題あり</span> **スケーラビリティ:** クライアント数やサーバーインスタンス数が大幅に増加した場合のパフォーマンス（特に `serverInstances` Map の操作、WebSocket通信、ファイルI/O）。</li>
+             <li><span class="status status-issue">課題あり</span> **Goクライアントのプレイヤー数検知:** 実装方法がゲームサーバー (Stormworks) に依存し、実現が複雑になる可能性がある。</li>
+        </ul>
+    </section>
+
+</div>
+
+<script>
+    // Set last updated date
+    document.getElementById('last-updated').textContent = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+
+    // Collapsible sections
+    const coll = document.getElementsByClassName("collapsible");
+    for (let i = 0; i < coll.length; i++) {
+        coll[i].addEventListener("click", function() {
+            this.classList.toggle("active");
+            const content = this.nextElementSibling;
+            if (content.style.display === "block") {
+                content.style.display = "none";
+            } else {
+                content.style.display = "block";
+            }
+        });
+    }
+
+    // Active sidebar link
+    const sections = document.querySelectorAll("section");
+    const navLi = document.querySelectorAll("#sidebar ul li a");
+
+    window.onscroll = () => {
+      var current = "";
+
+      sections.forEach((section) => {
+        const sectionTop = section.offsetTop;
+        if (pageYOffset >= sectionTop - 60) { // Adjust offset as needed
+          current = section.getAttribute("id"); }
+      });
+
+      navLi.forEach((a) => {
+        a.classList.remove("active");
+        if (a.getAttribute("href") == "#" + current) {
+          a.classList.add("active");
+        }
+      });
+    };
+
+    // Initial active link check
+     var current = "";
+     sections.forEach((section) => {
+        const sectionTop = section.offsetTop;
+        if (pageYOffset >= sectionTop - 60) {
+          current = section.getAttribute("id");
+        }
+     });
+     if (!current && sections.length > 0) current = sections[0].getAttribute("id"); // Activate first link if at top
+
+     navLi.forEach((a) => {
+        a.classList.remove("active");
+        if (a.getAttribute("href") == "#" + current) {
+          a.classList.add("active");
+        }
+     });
+
+
+</script>
+
+</body>
+</html>

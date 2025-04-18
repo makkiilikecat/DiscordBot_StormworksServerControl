@@ -12,6 +12,10 @@ const commandFolders = fs.readdirSync(foldersPath);
 
 for (const folder of commandFolders) {
 	const commandsPath = path.join(foldersPath, folder);
+	if (!fs.existsSync(commandsPath)) {
+		console.error(`[ERROR] The path ${commandsPath} does not exist.`);
+		continue;
+	}
 	const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 	// 各コマンドファイルの .data をJSON形式で取得
 	for (const file of commandFiles) {
@@ -55,6 +59,9 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN)
 		console.log(`Successfully reloaded ${data.length} application (/) commands.`);
 	} catch (error) {
 		// エラーをキャッチしてログに出力
-		console.error(error);
+		console.error('[ERROR] An error occurred while deploying commands:', error);
+        if (error.response && error.response.data) {
+            console.error('[ERROR DETAILS]', error.response.data);
+        }
 	}
 })();

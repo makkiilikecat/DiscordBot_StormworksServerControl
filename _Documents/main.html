@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord ゲームサーバー管理システム 解説</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+        }
+        details {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+        summary {
+            font-weight: bold;
+            padding: 10px;
+            cursor: pointer;
+            background-color: #eee;
+            border-bottom: 1px solid #ccc; /* 区切り線 */
+        }
+        summary:hover {
+            background-color: #e0e0e0;
+        }
+        details[open] summary {
+            border-bottom: 1px solid #ccc;
+        }
+        .content {
+            padding: 15px;
+            border-top: 1px solid #ccc; /* summaryとの区切り */
+        }
+        h3 {
+            margin-top: 15px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        h4 {
+            margin-top: 10px;
+            color: #333;
+        }
+        code {
+            background-color: #f0f0f0;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        pre code {
+            display: block;
+            padding: 10px;
+            overflow-x: auto;
+            background-color: #2d2d2d; /* ダークテーマのコードブロック */
+            color: #f8f8f2; /* 明るい文字色 */
+            border-radius: 5px;
+        }
+        ul {
+            margin-top: 5px;
+            margin-bottom: 10px;
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 5px;
+        }
+        .map-key-value {
+             font-style: italic;
+             color: #555;
+        }
+        .file-path {
+            font-style: italic;
+            color: #006621;
+        }
+        .function-name {
+            font-weight: bold;
+            color: #005c9e;
+        }
+        .param-name {
+            font-style: italic;
+        }
+        .important {
+            color: #c0392b;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Discord ゲームサーバー管理システム 解説</h1>
+
+    <section>
+        <h2>全体概要</h2>
+        <p>このシステムは、Discordボットを通じて物理サーバー上で稼働するゲームサーバーの起動、停止、状態管理を行うことを目的としています。</p>
+        <p>主要なコンポーネントは以下の通りです:</p>
+        <ul>
+            <li><strong>Discordボット (Node.js):</strong> Discord APIと連携し、ユーザーからのコマンドを受け付け、WebSocketサーバーとして機能します。</li>
+            <li><strong>Goクライアント (Go):</strong> 物理サーバー上で動作し、WebSocket経由でボットと通信し、実際のゲームサーバープロセスを管理します。</li>
+            <li><strong>WebSocket通信:</strong> ボットとGoクライアント間のリアルタイムな双方向通信を実現します。JSON形式でメッセージを送受信します。</li>
+        </ul>
+        <p>使用技術: Node.js, Discord.js, Go, WebSocket (ws, gorilla/websocket), dotenv, JSON。</p>
+    </section>
+
+    <hr>
+
+    <section>
+        <h2>Discordボット (Node.js / Discord.js)</h2>
+
+        <details>
+            <summary>主要な状態管理</summary>
+            <div class="content">
+                <p>ボットは以下のデータ構造 (主にMap) を使用してシステムの状態を管理します。</p>
+                <ul>
+                    <li>
+                        <strong><code>serverInstances</code> (Map):</strong> ボットが認識している全てのゲームサーバーインスタンスの状態を管理します。
+                        <br><span class="map-key-value">キー: 構成名 (<code>string</code>), 値: インスタンス状態 (<code>object</code>)</span>
+                        <pre><code class="language-javascript">// 値オブジェクトの例
+{
+  clientId: '...',         // 現在接続中の内部クライアントID (string | null)
+  physicalServerId: '...', // 物理サーバー識別ID (string)
+  ip: '...',               // 物理サーバーIPアドレス (string)
+  creatorId: '...',        // 物理サーバー登録者のDiscord ID (string)
+  status: 'running' | 'stopped' | 'starting' | 'stopping', // 状態 (string)
+  name: '...'              // 構成名 (string)
+  // startInteractionId: '...' // (オプション) 開始コマンドのインタラクションID
+}</code></pre>
+                    </li>
+                    <li>
+                        <strong><code>clients</code> (Map):</strong> 現在ボットに接続中のWebSocketクライアント（物理サーバー）の情報を保持します。
+                        <br><span class="map-key-value">キー: 内部クライアントID (<code>string</code>), 値: クライアント情報 (<code>object</code>)</span>
+                        <pre><code class="language-javascript">// 値オブジェクトの例
+{
+  ws: WebSocket,           // WebSocket接続オブジェクト
+  physicalServerId: '...', // 物理サーバー識別ID (string)
+  ip: '...',               // IPアドレス (string)
+  creatorId: '...',        // 登録者のDiscord ID (string)
+  synced: boolean,         // 状態同期が完了したか
+  lastPingTime: number | null, // 最後のPing送信時刻
+  ping: number | null,      // Ping応答時間 (ms)
+  isAlive: boolean,        // Ping応答確認フラグ
+  pingIntervalId: NodeJS.Timeout | null, // Ping送信タイマーID
+  pongTimeoutId: NodeJS.Timeout | null  // Pong受信タイムアウトタイマーID
+}</code></pre>
+                    </li>
+                    <li>
+                        <strong><code>disconnectTimers</code> (Map):</strong> 接続が切断された物理サーバーのインスタンスクリーンアップ用タイマーを管理します。
+                        <br><span class="map-key-value">キー: 物理サーバー識別ID (<code>string</code>), 値: タイマーID (<code>NodeJS.Timeout</code>)</span>
+                    </li>
+                    <li>
+                        <strong><code>tokens</code> (JSONファイル):</strong> 物理サーバー認証用のトークン情報を永続化します。<span class="file-path">token_manager.js</span> によって管理されます。
+                        <pre><code class="language-json">[
+  {
+    "token": "...",           // 認証トークン (string)
+    "creatorId": "...",       // 作成者のDiscord ID (string)
+    "connectionCount": number, // 接続回数
+    "lastConnectedAt": string | null, // 最終接続日時 (ISO String)
+    "createdAt": string         // 作成日時 (ISO String)
+  },
+  // ...
+]</code></pre>
+                    </li>
+                     <li>
+                        <strong><code>requestPromises</code> (Map):</strong> <code class="function-name">sendPacket</code> で送信したリクエストと、その応答を処理するPromise関数を紐付けます。
+                        <br><span class="map-key-value">キー: リクエストID (<code>string</code>), 値: { resolve, reject, timeoutId } (<code>object</code>)</span>
+                    </li>
+                </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: WebSocketサーバー (<span class="file-path">websocket_server.js</span>)</summary>
+            <div class="content">
+                <h3>目的</h3>
+                <p>GoクライアントからのWebSocket接続を受け付け、認証、状態同期、メッセージの送受信、接続管理を行います。</p>
+
+                <h3>主要関数</h3>
+                <ul>
+                    <li><code class="function-name">startWebSocket(port, serverInstancesMap)</code>: 指定ポートでWebSocketサーバーを起動し、<code class="param-name">serverInstances</code> Map を設定します。</li>
+                    <li><code class="function-name">stopWebSocket()</code>: サーバーを停止し、全ての接続とタイマーをクリーンアップします。</li>
+                    <li>
+                        <code class="function-name">handleConnection(ws, req)</code>: 新規接続要求を処理します。
+                        <ul>
+                            <li><strong>認証:</strong> リクエストヘッダーの `Authorization: Bearer <token>` を検証 (<code class="function-name">tokenManager.validateToken</code>)。</li>
+                            <li><strong>物理サーバーID決定:</strong> <code>creatorId</code> と <code>ip</code> の組み合わせで物理サーバーを識別 (<code class="important">注意: より堅牢なID推奨</code>)。</li>
+                            <li><strong>多重接続処理:</strong> 同じ物理サーバーIDからの既存接続があれば古い接続をクリーンアップ。</li>
+                            <li><strong>切断タイマー解除:</strong> 再接続の場合、<code class="param-name">disconnectTimers</code> から該当タイマーを削除。</li>
+                            <li><strong>クライアント登録:</strong> 新しい内部 <code class="param-name">clientId</code> を生成し、クライアント情報を <code class="param-name">clients</code> Map に登録。</li>
+                            <li><strong>イベントリスナー設定:</strong> `message`, `close`, `error`, `pong` イベントに対するハンドラを設定。</li>
+                            <li><strong>初期処理:</strong> 接続完了通知をクライアントに送信、Ping送信開始 (<code class="function-name">startPingInterval</code>)。</li>
+                            <li><span class="important">状態同期は最初のメッセージ受信時 (<code class="function-name">handleMessage</code> 内) に移行。</span></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <code class="function-name">handleMessage(clientId, message)</code>: クライアントからのメッセージを処理します。
+                        <ul>
+                            <li><strong>状態同期:</strong> クライアント情報 (<code class="param-name">clientInfo</code>) の `synced` フラグが `false` で、メッセージタイプが `syncStatus` の場合、<code class="function-name">synchronizeServerState</code> を呼び出します。同期前に他のメッセージが来た場合はエラー応答または切断。</li>
+                            <li><strong>応答処理:</strong> <code class="param-name">requestId</code> があり <code class="param-name">requestPromises</code> に存在する場合、対応するPromiseを解決または拒否。</li>
+                            <li><strong>イベント処理:</strong> タイプが `serverEvent` の場合、内容に応じてログ出力や関連処理（例: 自動再起動通知の準備）。</li>
+                            <li><strong>その他:</strong> 未対応メッセージタイプのログ出力。</li>
+                        </ul>
+                    </li>
+                     <li>
+                        <code class="function-name">synchronizeServerState(physicalServerId, clientId, goSideRunningServers)</code>: ボットとGoクライアントのサーバー状態を同期させます。
+                        <ul>
+                            <li><strong>初回/再接続判定:</strong> <code class="param-name">serverInstances</code> に該当 <code class="param-name">physicalServerId</code> の実行中サーバーが存在するかで判定。</li>
+                            <li><strong>初回同期:</strong> <code class="param-name">serverInstances</code> 内の該当物理サーバー情報をクリアし、<code class="param-name">goSideRunningServers</code> リストに基づいて上書き登録。</li>
+                            <li><strong>再接続同期:</strong> ボット側のリストとGo側のリストを比較。
+                                <ul>
+                                    <li>Bot側のみ存在 → Bot側の状態を 'stopped' に更新（Go側で停止済みと判断）。</li>
+                                    <li>Go側のみ存在 → Go側に停止要求 (<code class="function-name">serverUtils.stopServer(clientId, name, true)</code>) を送信（Botが知らないサーバーと判断）。</li>
+                                    <li>両方に存在 → <code class="param-name">clientId</code> を最新のものに更新。</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                     <li>
+                        <code class="function-name">cleanupClient(clientId, immediate = false)</code>: クライアント切断時の後処理。
+                        <ul>
+                            <li>Ping/Pongタイマー停止。</li>
+                            <li>WebSocket接続強制終了 (<code class="param-name">ws.terminate</code>)。</li>
+                            <li><code>immediate = true</code> の場合: 即座に <code class="param-name">clients</code> Map から削除。</li>
+                            <li><code>immediate = false</code> の場合:
+                                <ul>
+                                    <li><code class="param-name">clients</code> Map からはすぐに削除。</li>
+                                    <li>10分のタイマー (<code class="param-name">INSTANCE_CLEANUP_TIMEOUT</code>) をセットし、<code class="param-name">disconnectTimers</code> Map に保存。</li>
+                                    <li>タイマー発火時: <code class="param-name">serverInstances</code> から該当 <code class="param-name">physicalServerId</code> のサーバーを削除または 'stopped' に更新。</li>
+                                </ul>
+                            </li>
+                             <li>保留中のリクエストを失敗させる (<code class="function-name">rejectPendingRequests</code>)。</li>
+                        </ul>
+                    </li>
+                     <li><code class="function-name">sendPacket(clientId, data, timeout)</code>: 特定クライアントにJSONデータを非同期送信し、応答を待ちます（タイムアウト付き）。<code class="param-name">requestPromises</code> Map を使用。</li>
+                     <li><code class="function-name">sendToClient(clientId, data)</code>: 特定クライアントにJSONデータを送信します（応答待機なし）。</li>
+                     <li><code class="function-name">getConnectedClients()</code>: 現在接続中のクライアント情報のリストを返します。</li>
+                     <li><code class="function-name">findClientByPhysicalId(physicalServerId)</code>: 物理サーバーIDでクライアント情報を検索します。</li>
+                     <li><code class="function-name">handlePong(clientId)</code>: Pongメッセージ受信時の処理。</li>
+                     <li><code class="function-name">startPingInterval(clientId)</code>: 定期的なPing送信と応答タイムアウト監視を開始します。</li>
+                     <li><code class="function-name">rejectPendingRequests(clientId)</code>: 保留中の `sendPacket` 要求を失敗させます。</li>
+                     <li><code class="function-name">setServerInstances(instancesMap)</code>: 外部から <code class="param-name">serverInstances</code> Map を設定します。</li>
+                </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: トークン管理 (<span class="file-path">token_manager.js</span>)</summary>
+            <div class="content">
+                 <h3>目的</h3>
+                 <p>物理サーバー（Goクライアント）がボットに接続する際の認証に使用するトークンを管理します。</p>
+                 <h3>主要関数</h3>
+                 <ul>
+                     <li><code class="function-name">createToken(length = 32)</code>: 暗号学的に安全なランダムトークン文字列を生成します。</li>
+                     <li><code class="function-name">saveToken(creatorId)</code>: 新しいトークンを生成し、作成者のDiscord IDと共にJSONファイル (<code class="param-name">TOKENS_FILE_PATH</code>) に保存します。</li>
+                     <li><code class="function-name">validateToken(tokenToValidate)</code>: 提供されたトークンがJSONファイル内に存在するか検証します。存在すれば、接続回数と最終接続日時を更新して保存し、<code class="param-name">{ isValid: true, creatorId }</code> を返します。</li>
+                     <li><code class="function-name">checkTokens()</code>: ボット起動時に呼び出され、JSONファイル内のトークンをチェックします。一度も使用されず (<code class="param-name">connectionCount === 0</code>)、作成から一定期間 (<code class="param-name">UNUSED_TOKEN_EXPIRY_DAYS</code>) が経過したトークンを削除します。</li>
+                     <li><code class="function-name">loadTokens()</code>: JSONファイルからトークンデータの配列を安全に読み込みます。ファイルが存在しない、空、または不正なJSONの場合は空配列 `[]` を返します。</li>
+                     <li><code class="function-name">saveTokensToFile(tokens)</code>: トークンデータの配列をJSONファイルに書き込みます。ディレクトリが存在しない場合は作成します。</li>
+                 </ul>
+                 <h3>データファイル</h3>
+                 <ul>
+                    <li>環境変数 <code class="param-name">TOKENS_STORAGE</code> で指定されたパスのJSONファイル (例: <span class="file-path">./tokens.json</span>)。</li>
+                 </ul>
+            </div>
+        </details>
+
+         <details>
+            <summary>機能: サーバー操作ユーティリティ (<span class="file-path">server_utils.js</span>)</summary>
+            <div class="content">
+                 <h3>目的</h3>
+                 <p>WebSocket通信 (<code class="function-name">sendPacket</code>) を利用して、物理サーバー上のGoクライアントにゲームサーバーの起動・停止要求を送信し、関連する設定ファイルの管理を行います。</p>
+                 <h3>主要関数</h3>
+                 <ul>
+                     <li>
+                         <code class="function-name">startServer(clientId, configName)</code>:
+                         <ul>
+                             <li>指定された <code class="param-name">configName</code> の設定ファイル (<span class="file-path">server_config.xml</span>) を <code class="function-name">loadConfig</code> で読み込みます。</li>
+                             <li><code class="function-name">websocket_server.sendPacket</code> を使用して、<code class="param-name">clientId</code> のGoクライアントに `{ type: 'startServer', payload: { name: configName, config: xmlString } }` 形式の要求を送信します。</li>
+                             <li>Goクライアントからの応答 (成功/失敗メッセージ) を返します。</li>
+                         </ul>
+                     </li>
+                      <li>
+                         <code class="function-name">stopServer(clientId, configName, confirmed = false)</code>:
+                         <ul>
+                             <li><code class="function-name">websocket_server.sendPacket</code> を使用して、<code class="param-name">clientId</code> のGoクライアントに `{ type: 'stopServer', payload: { name: configName, confirmed: confirmed } }` 形式の要求を送信します (<code class="param-name">confirmed</code> は停止確認済みかを示すフラグ)。</li>
+                             <li>Goクライアントからの応答を処理します。
+                                <ul>
+                                    <li>応答に `requiresConfirmation: true` が含まれる場合、その旨とプレイヤー数を返します。</li>
+                                    <li>応答に `success: true` と更新された設定ファイル (`config`) が含まれる場合、<code class="function-name">validateServerConfig</code> で検証し、成功すれば <code class="function-name">saveConfig</code> で保存します。</li>
+                                    <li>成功/失敗、確認要否、設定保存成否などの情報を含む結果オブジェクトを返します。</li>
+                                </ul>
+                             </li>
+                         </ul>
+                     </li>
+                     <li><code class="function-name">loadConfig(configName)</code>: 指定された構成名の設定ファイルの内容を読み込みます。</li>
+                     <li><code class="function-name">saveConfig(configName, xmlString)</code>: 指定された構成名で設定ファイルの内容を保存します。</li>
+                     <li><code class="function-name">getConfigPath(configName)</code>: 構成名から設定ファイルのフルパスを取得します。</li>
+                     <li><code class="function-name">validateServerConfig(xmlString)</code>: <span class="important">別途実装が必要な関数。</span>XML文字列を受け取り、その内容がサーバー設定として有効か検証します。<code>{ success: boolean, errors: string[], parsedData: object|null }</code> を返すことを期待します。</li>
+                 </ul>
+                 <h3>設定ファイル</h3>
+                 <ul>
+                    <li>環境変数 <code class="param-name">SERVER_CONFIGS_DIR</code> またはデフォルト (<span class="file-path">./server_configs/</span>) 下の構成名別ディレクトリに <span class="file-path">server_config.xml</span> として保存されます。</li>
+                 </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: Discordコマンド (<span class="file-path">commands/sws/</span>)</summary>
+            <div class="content">
+                 <h4><code class="function-name">/sws register_my_server</code> (<span class="file-path">register_my_server.js</span>)</h4>
+                 <ul>
+                     <li><code class="function-name">tokenManager.saveToken</code> を呼び出して新しいトークンを生成・保存します。</li>
+                     <li>生成されたトークンを実行ユーザーのDMに送信します。</li>
+                 </ul>
+                 <h4><code class="function-name">/sws start [name]</code> (<span class="file-path">start.js</span>)</h4>
+                 <ul>
+                     <li><strong>コマンド実行時 (<code class="function-name">handleSlashCommand</code>):</strong>
+                         <ul>
+                            <li>指定された <code class="param-name">name</code> の構成ファイルが存在するかチェックします。</li>
+                            <li><code class="function-name">websocket_server.getConnectedClients</code> で接続中の物理サーバーリストを取得します。</li>
+                            <li>リストからドロップダウンメニュー (<code class="classname">StringSelectMenuBuilder</code>) を作成します。
+                                <ul>
+                                    <li>ラベルには登録者のユーザー名とサーバー番号を表示（IP/ClientIDは非表示）。</li>
+                                    <li>値には内部クライアントID (<code class="param-name">server.id</code>) を設定。</li>
+                                </ul>
+                            </li>
+                            <li>ドロップダウンメニューを含むメッセージを返信します (<code class="function-name">interaction.reply</code>)。</li>
+                         </ul>
+                     </li>
+                     <li><strong>メニュー選択時 (<code class="function-name">handleMenuSelection</code>):</strong>
+                        <ul>
+                            <li>選択されたクライアントID (<code class="param-name">selectedClientId</code>) を取得します。</li>
+                            <li><code class="function-name">getConnectedClients</code> でクライアント情報を再取得し、ユーザー向け識別子 (<code class="param-name">serverIdentifier</code>) とログ用IPを生成します。</li>
+                            <li>メニュー応答を「起動準備中」に更新します (<code class="function-name">interaction.update</code>)。</li>
+                            <li><code class="function-name">serverUtils.startServer(selectedClientId, instanceName)</code> を呼び出し、1分のタイムアウト処理を適用します。</li>
+                            <li><code class="function-name">interaction.editReply</code> を使用して、「起動準備中」メッセージを編集し、結果（成功/失敗Embed）を表示します。EmbedにはIP/ClientID等のコア情報は含めません。</li>
+                            <li>成功時、<code class="param-name">serverInstances</code> Map に新しいエントリを追加または状態を更新します（この部分は startServer 成功応答のハンドリング、または同期処理に依存する可能性あり）。</li>
+                        </ul>
+                     </li>
+                 </ul>
+                  <h4><code class="function-name">/sws stop [name]</code> (<span class="file-path">stop.js</span>)</h4>
+                 <ul>
+                     <li><strong>コマンド実行時 (<code class="function-name">handleStopCommand</code>):</strong>
+                        <ul>
+                            <li><code class="param-name">serverInstances</code> Map から指定された <code class="param-name">name</code> のサーバー状態を取得し、実行中か確認します。</li>
+                            <li>状態からクライアントID (<code class="param-name">clientId</code>) を取得します。</li>
+                            <li>応答を保留します (<code class="function-name">interaction.deferReply</code>)。</li>
+                            <li><code class="function-name">serverUtils.stopServer(clientId, instanceName, false)</code> を呼び出します (初回、確認フラグなし)。</li>
+                            <li>結果を <code class="function-name">handleStopResult</code> に渡します。</li>
+                        </ul>
+                    </li>
+                     <li><strong>確認ボタン応答時 (<code class="function-name">handleStopConfirmation</code>):</strong>
+                        <ul>
+                            <li>ボタンの <code class="param-name">customId</code> から <code class="param-name">instanceName</code>, <code class="param-name">clientId</code>, アクション (`confirm`/`cancel`) を解析します。</li>
+                            <li>`cancel` の場合、キャンセルメッセージを表示して終了 (<code class="function-name">interaction.update</code>)。</li>
+                             <li>`confirm` の場合、ボタン応答を「処理中」に更新 (<code class="function-name">interaction.update</code>)。</li>
+                            <li><code class="function-name">serverUtils.stopServer(clientId, instanceName, true)</code> を呼び出します (確認フラグあり)。</li>
+                            <li>結果を <code class="function-name">handleStopResult</code> に渡し、ボタン応答を編集して最終結果を表示します。</li>
+                        </ul>
+                    </li>
+                     <li><strong>結果処理 (<code class="function-name">handleStopResult</code>):</strong>
+                        <ul>
+                            <li><code class="param-name">stopServer</code> の結果オブジェクトを評価します。</li>
+                             <li><code>requiresConfirmation: true</code> の場合: 確認用Embedとボタンを表示 (<code class="function-name">interaction.editReply</code>)。</li>
+                             <li><code>success: true</code> の場合: 成功Embedを表示し、<code class="param-name">serverInstances</code> から削除または状態を 'stopped' に更新 (<code class="function-name">interaction.editReply</code>)。</li>
+                             <li><code>success: false</code> の場合: 失敗Embedを表示 (<code class="function-name">interaction.editReply</code>)。詳細はログ参照を促す。</li>
+                        </ul>
+                    </li>
+                 </ul>
+            </div>
+        </details>
+
+         <details>
+            <summary>機能: ロギング (<span class="file-path">text_chat_logger.js</span>)</summary>
+            <div class="content">
+                 <h3>目的</h3>
+                 <p>システムの動作状況やエラーを、コンソールと指定されたDiscordのログチャンネル（及びインタラクションごとのスレッド）に分かりやすく記録します。</p>
+                 <h3>主要関数</h3>
+                 <ul>
+                     <li><code class="function-name">initializeLogger(client, debugMode)</code>: ボット起動時に呼び出し、Discordクライアントインスタンスとデバッグモードを設定し、ログ出力用チャンネルを取得します。</li>
+                     <li><code class="function-name">log(level, message, options = {})</code>: 指定されたレベルとメッセージでログを出力します。
+                        <ul>
+                            <li>コンソールには <code class="library">chalk</code> を使って色付きで出力（デバッグモード時はDEBUGレベルも出力）。</li>
+                            <li>DiscordにはEmbed形式で出力（デバッグモード時、または <code class="param-name">forceDiscord=true</code> の場合）。</li>
+                            <li>オプションでインタラクション情報、エラーオブジェクト、追加データを含めることが可能。</li>
+                            <li>オプションで指定されたスレッド (<code class="param-name">options.thread</code>) またはインタラクションに対応するスレッド (<code class="function-name">getOrCreateLogThread</code> で取得) にログを送信。送信先スレッドがない場合はメインログチャンネルに送信。</li>
+                        </ul>
+                     </li>
+                    <li><code class="function-name">getOrCreateLogThread(interaction)</code>: インタラクションオブジェクトを受け取り、対応するログスレッドを探すか新規作成します。
+                        <ul>
+                            <li>インタラクションIDをキーとしてスレッドをキャッシュ (<code class="param-name">activeThreads</code> Map)。</li>
+                            <li>スレッド名をコマンド名やインタラクションタイプ、ユーザー名から生成。</li>
+                            <li>Discordチャンネル (<code class="param-name">logChannel</code>) にスレッドを作成 (<code class="method">threads.create</code>)。</li>
+                             <li>一定時間後にキャッシュから削除するタイマーを設定。</li>
+                        </ul>
+                     </li>
+                 </ul>
+                 <h3>設定</h3>
+                 <ul>
+                    <li>ログ出力先のDiscordチャンネルIDを <span class="file-path">utility/registry.js</span> または環境変数で設定 (<code class="param-name">config.discordLogChannelId</code>)。</li>
+                    <li>デバッグモードの有効/無効を <code class="function-name">initializeLogger</code> の引数で設定。</li>
+                 </ul>
+            </div>
+        </details>
+
+    </section>
+
+    <hr>
+
+    <section>
+        <h2>Goクライアント (Go)</h2>
+
+        <details>
+            <summary>主要な状態管理</summary>
+            <div class="content">
+                <ul>
+                    <li><strong><code>runningProcs</code> (Map):</strong> 起動中のゲームサーバープロセスを管理します。
+                        <br><span class="map-key-value">キー: 構成名 (<code>string</code>), 値: プロセス情報 (<code>*os.Process</code>)</span>
+                        <br>アクセスは <code class="library">sync.Mutex</code> (<code class="variable">procsMutex</code>) で保護されます。
+                    </li>
+                    <li><strong><code>conn</code> (Pointer):</strong> 現在のWebSocket接続オブジェクト (<code class="library">*websocket.Conn</code>)。
+                        <br>アクセスは <code class="library">sync.Mutex</code> (<code class="variable">connMutex</code>) で保護されます。
+                    </li>
+                    <li><strong><code>authToken</code> (string):</strong> <span class="file-path">.env</span> ファイルから読み込まれた認証トークン。</li>
+                    <li><strong><code>serverExePath</code> (string):</strong> <span class="file-path">.env</span> ファイルから読み込まれたゲームサーバー実行ファイルのパス。</li>
+                </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: 起動と接続 (<span class="file-path">main.go</span>: <code class="function-name">main</code>, <code class="function-name">connectWebSocket</code>)</summary>
+            <div class="content">
+                 <h3>目的</h3>
+                 <p>設定を読み込み、指定されたWebSocketサーバー (ボット) への接続を確立・維持します。</p>
+                 <h3>処理フロー</h3>
+                 <ul>
+                     <li><strong>初期化 (<code class="function-name">init</code>):</strong> <code class="library">godotenv.Load</code> で <span class="file-path">.env</span> ファイルを読み込み、<code class="variable">serverExePath</code> と <code class="variable">authToken</code> をグローバル変数に格納。 <code class="variable">runningProcs</code> Map を初期化。</li>
+                     <li><strong>接続ループ (<code class="function-name">main</code>):</strong>
+                        <ul>
+                            <li>無限ループで <code class="function-name">connectWebSocket</code> を呼び出し接続を試行。</li>
+                            <li>接続失敗または切断時、10秒 (<code class="constant">reconnectDelay</code>) 待機してリトライ。</li>
+                            <li>トークンが拒否された場合 (<code class="constant">tokenRejectedCode</code>)、リトライを停止しプログラム終了。</li>
+                        </ul>
+                     </li>
+                     <li><strong>接続処理 (<code class="function-name">connectWebSocket</code>):</strong>
+                        <ul>
+                            <li><code class="library">gorilla/websocket.Dialer</code> を使用して接続。</li>
+                            <li>HTTPヘッダーに <code class="header">Authorization: Bearer [authToken]</code> を設定。</li>
+                             <li>接続成功後、グローバル変数 <code class="variable">conn</code> に接続オブジェクトを保存。</li>
+                             <li>接続クローズハンドラ (<code class="method">SetCloseHandler</code>) を設定し、トークン拒否 (<code class="constant">tokenRejectedCode</code>) を検知。</li>
+                             <li>Pingハンドラ (<code class="method">SetPingHandler</code>) を設定し、ボットからのPingに自動でPongを返すように構成。</li>
+                             <li><span class="important">状態同期メッセージ送信:</span> 接続直後に、現在の <code class="variable">runningProcs</code> のキーリストを含む `{ type: 'syncStatus', payload: { runningServers: [...] } }` メッセージを <code class="function-name">sendMessage</code> で送信する必要があります (現在のコードには未実装、追加が必要)。</li>
+                             <li>メッセージ読み取りループ <code class="function-name">readMessages</code> を開始 (ブロッキング)。</li>
+                             <li><code class="function-name">readMessages</code> 終了後 (切断時)、接続をクリーンアップし、エラーがあれば返す。</li>
+                        </ul>
+                     </li>
+                 </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: メッセージ受信と処理 (<span class="file-path">main.go</span>: <code class="function-name">readMessages</code>)</summary>
+            <div class="content">
+                <h3>目的</h3>
+                <p>ボットからのWebSocketメッセージを継続的に読み取り、タイプに応じて適切な処理関数を呼び出します。</p>
+                 <h3>処理フロー</h3>
+                 <ul>
+                    <li>無限ループで <code class="method">conn.ReadMessage()</code> を呼び出しメッセージを待機。</li>
+                     <li>受信メッセージをJSON形式 (<code class="struct">WsMessage</code>) にデコード。</li>
+                     <li>メッセージの <code class="field">Type</code> フィールドを確認:
+                        <ul>
+                            <li><code>"startServer"</code>: <code class="function-name">handleStartServer</code> をゴルーチンで呼び出し。</li>
+                            <li><code>"stopServer"</code>: <code class="function-name">handleStopServer</code> をゴルーチンで呼び出し。</li>
+                             <li><code>"connected"</code>: 接続完了通知としてログ出力。</li>
+                            <li>その他: 未対応タイプとしてログ出力。</li>
+                        </ul>
+                     </li>
+                     <li>読み取りエラー発生時や接続切断時はループを終了し、<code class="function-name">connectWebSocket</code> 関数に制御を戻す（再接続のため）。</li>
+                 </ul>
+                 <h3>関連構造体</h3>
+                 <ul>
+                    <li><code class="struct">WsMessage { Type string; RequestID string; Payload json.RawMessage }</code></li>
+                 </ul>
+            </div>
+        </details>
+
+         <details>
+            <summary>機能: 状態同期メッセージ送信 (<span class="important">Go側に追加実装が必要</span>)</summary>
+            <div class="content">
+                 <h3>目的</h3>
+                 <p>WebSocket接続確立直後に、現在Goクライアントが管理している起動中サーバーのリストをボットに送信し、状態の同期を行います。</p>
+                 <h3>実装箇所</h3>
+                 <ul>
+                    <li><code class="function-name">connectWebSocket</code> 関数の接続成功直後。</li>
+                 </ul>
+                 <h3>処理内容</h3>
+                 <ul>
+                     <li><code class="variable">procsMutex</code> をロックして <code class="variable">runningProcs</code> Map からキー（構成名）のリストを取得。</li>
+                     <li>取得したリストを `runningServers` フィールドに持つペイロードを作成。</li>
+                     <li>`{ type: "syncStatus", payload: { runningServers: [...] } }` 形式の <code class="struct">WsMessage</code> を作成。</li>
+                     <li><code class="function-name">sendMessage</code> を使用してボットに送信。</li>
+                     <li><code class="variable">procsMutex</code> をアンロック。</li>
+                 </ul>
+                 <h3>送信メッセージ例</h3>
+                 <pre><code class="language-json">{
+  "type": "syncStatus",
+  "payload": {
+    "runningServers": ["survival_world", "creative_lobby"]
+  }
+}</code></pre>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: サーバー起動処理 (<span class="file-path">main.go</span>: <code class="function-name">handleStartServer</code>)</summary>
+            <div class="content">
+                <h3>目的</h3>
+                <p>ボットからの `startServer` 要求を受け取り、指定された構成でゲームサーバープロセスを起動します。</p>
+                 <h3>処理フロー</h3>
+                 <ul>
+                     <li>要求ペイロード (<code class="struct">StartServerPayload</code>) をデコードし、構成名 (<code class="field">Name</code>) と設定XML (<code class="field">Config</code>) を取得。</li>
+                     <li>設定ファイル保存用ディレクトリ (<code class="constant">configBaseDir</code>/<code class="field">Name</code>) を <code class="library">os.MkdirAll</code> で作成。</li>
+                     <li>設定XMLを <span class="file-path">server_config.xml</span> として <code class="library">os.WriteFile</code> で保存。</li>
+                     <li><code class="variable">procsMutex</code> をロックし、同じ構成名の既存プロセスがあれば <code class="method">Kill()</code> して <code class="variable">runningProcs</code> から削除。</li>
+                     <li>ゲームサーバー実行ファイル (<code class="variable">serverExePath</code>) を、引数 <code class="argument">+server_dir "[設定ディレクトリの絶対パス]"</code> 付きで実行するコマンド (<code class="library">os/exec.Command</code>) を作成。</li>
+                     <li><code class="method">cmd.Start()</code> でプロセスを非同期に開始。</li>
+                     <li>開始したプロセス情報 (<code class="library">*os.Process</code>) を <code class="variable">runningProcs</code> Map に構成名と紐付けて保存。</li>
+                     <li><code class="variable">procsMutex</code> をアンロック。</li>
+                     <li>成功応答 (<code class="struct">ResponsePayload</code>) を <code class="function-name">sendResponse</code> でボットに送信。</li>
+                     <li>別のゴルーチンで <code class="method">process.Wait()</code> を呼び出し、プロセスの終了を監視。終了時に <code class="variable">runningProcs</code> から削除し、ログ出力（クラッシュ検知）。</li>
+                 </ul>
+                 <h3>関連構造体</h3>
+                 <ul>
+                    <li><code class="struct">StartServerPayload { Name string; Config string }</code></li>
+                    <li><code class="struct">ResponsePayload { Success bool; Message string; Config string; ... }</code></li>
+                 </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: サーバー停止処理 (<span class="file-path">main.go</span>: <code class="function-name">handleStopServer</code>)</summary>
+            <div class="content">
+                 <h3>目的</h3>
+                 <p>ボットからの `stopServer` 要求を受け取り、指定された構成のゲームサーバープロセスを停止し、設定ファイルを返却します。</p>
+                 <h3>処理フロー</h3>
+                 <ul>
+                    <li>要求ペイロード (<code class="struct">StopServerPayload</code> と追加の `confirmed` フラグが必要) をデコードし、構成名 (<code class="field">Name</code>) と確認済みフラグ (<code class="field">Confirmed</code>) を取得 (<span class="important">`Confirmed` フラグの受信処理追加が必要</span>)。</li>
+                     <li><code class="variable">procsMutex</code> をロックし、<code class="variable">runningProcs</code> Map から指定された構成名のプロセス情報を取得・削除。存在しなければエラー応答。</li>
+                     <li><code class="variable">procsMutex</code> をアンロック。</li>
+                     <li><span class="important">プレイヤー数チェックと確認応答は不要</span>（ボット側で処理し、Go側は <code class="field">Confirmed</code> フラグで判断）。</li>
+                     <li><code class="method">process.Kill()</code> を呼び出してプロセスに停止シグナルを送信。</li>
+                     <li><code class="method">process.Wait()</code> を呼び出してプロセスの終了を待機。</li>
+                     <li>停止したサーバーの設定ファイル (<span class="file-path">server_config.xml</span>) を <code class="library">os.ReadFile</code> で読み込み。</li>
+                     <li>成功応答 (<code class="struct">ResponsePayload</code>) に読み込んだ設定ファイルの内容 (<code class="field">Config</code>) を含めて、<code class="function-name">sendResponse</code> でボットに送信。</li>
+                     <li>設定ファイルが保存されていたディレクトリ (<code class="constant">configBaseDir</code>/<code class="field">Name</code>) を <code class="library">os.RemoveAll</code> で削除。</li>
+                 </ul>
+                  <h3>関連構造体</h3>
+                 <ul>
+                    <li><code class="struct">StopServerPayload { Name string; Confirmed bool }</code> (<span class="important">Confirmed フィールド追加が必要</span>)</li>
+                    <li><code class="struct">ResponsePayload { Success bool; Message string; Config string; ... }</code></li>
+                 </ul>
+            </div>
+        </details>
+
+        <details>
+            <summary>機能: 応答送信 (<span class="file-path">main.go</span>: <code class="function-name">sendResponse</code>, <code class="function-name">sendErrorResponse</code>, <code class="function-name">sendMessage</code>)</summary>
+            <div class="content">
+                <h3>目的</h3>
+                <p>処理結果やエラー情報を、ボットが期待するJSON形式でWebSocket接続を通じて送信します。</p>
+                 <h3>処理フロー</h3>
+                 <ul>
+                    <li><code class="function-name">sendResponse</code> / <code class="function-name">sendErrorResponse</code>:
+                        <ul>
+                            <li>応答データ (<code class="struct">ResponsePayload</code> または <code class="struct">ErrorResponsePayload</code>) を作成。</li>
+                             <li>ペイロードを <code class="library">json.Marshal</code> でJSONバイト配列に変換。</li>
+                             <li><code class="struct">WsMessage</code> (Type: "response" または "error", RequestID 付き) を作成し、ペイロードを設定。</li>
+                             <li><code class="function-name">sendMessage</code> を呼び出して送信。</li>
+                        </ul>
+                    </li>
+                     <li><code class="function-name">sendMessage</code>:
+                        <ul>
+                             <li><code class="variable">connMutex</code> をロック。</li>
+                             <li><code class="struct">WsMessage</code> を <code class="library">json.Marshal</code> でJSONバイト配列に変換。</li>
+                             <li><code class="method">conn.WriteMessage(websocket.TextMessage, ...)</code> でメッセージを送信。</li>
+                             <li><code class="variable">connMutex</code> をアンロック。</li>
+                             <li>送信エラー発生時はログ出力。</li>
+                        </ul>
+                    </li>
+                 </ul>
+                  <h3>関連構造体</h3>
+                 <ul>
+                    <li><code class="struct">WsMessage</code></li>
+                    <li><code class="struct">ResponsePayload</code></li>
+                    <li><code class="struct">ErrorResponsePayload</code></li>
+                 </ul>
+            </div>
+        </details>
+
+         <details>
+            <summary>機能: Ping/Pong処理</summary>
+            <div class="content">
+                <h3>目的</h3>
+                <p>WebSocket接続がアクティブであることを確認します。</p>
+                 <h3>処理</h3>
+                 <ul>
+                    <li><strong>Goクライアント側:</strong> ボット (サーバー) からPingメッセージを受信すると、<code class="function-name">connectWebSocket</code> で設定したPingハンドラ (<code class="method">SetPingHandler</code>) が起動し、自動的にPongメッセージを返します。</li>
+                     <li><strong>ボット側:</strong> <code class="function-name">startPingInterval</code> で定期的にGoクライアントにPingを送信し、<code class="function-name">handlePong</code> でPong応答を監視します。一定時間 (<code class="constant">PING_TIMEOUT</code>) 応答がない場合は接続が切断されたと判断し、<code class="function-name">cleanupClient</code> を呼び出します。</li>
+                 </ul>
+            </div>
+        </details>
+
+    </section>
+
+</body>
+</html>

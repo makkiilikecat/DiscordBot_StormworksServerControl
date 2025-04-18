@@ -1,16 +1,20 @@
 // commands/utility/utils.js
 const fs = require('node:fs').promises;
-const path = require('node:path');
-const { exec } = require('node:child_process');
-const iconvLite = require('iconv-lite');
-const xml2js = require('xml2js');
-const config = require('./registry');
+const path = require('node:path')
+const { exec } = require('node:child_process')
+const iconvLite = require('iconv-lite')
+const xml2js = require('xml2js')
+const config = require('./registry')
+const chalk = require('chalk')
 
 const SERVER_EXECUTABLE_NAME = config.serverExecutableName;
 const SERVER_TEMPLATE_BASE_PATH = config.templateBasePath;
 const SERVER_CONFIG_BASE_PATH = config.configBasePath;
 const MIN_PORT = config.minPort;
 const MAX_PORT = config.maxPort;
+
+// デバッグモードの設定
+const DEBUG_MODE = true // true: 詳細なデバッグログを表示, false: 基本的なログのみ
 
 // XMLパーサーとビルダー
 const parser = new xml2js.Parser()
@@ -22,10 +26,19 @@ const builder = new xml2js.Builder()
  * @returns {boolean} 有効な場合は true, 無効な場合は false
  */
 function isValidConfigName(name) {
-    if (!name) return false
+    if (!name) {
+        if (DEBUG_MODE) {
+            console.log(chalk.yellow('[DEBUG] Config name is empty or undefined.'))
+        }
+        return false;
+    }
     // 半角英数字とアンダーバーのみ許可
-    const validNameRegex = /^[a-zA-Z0-9_]+$/
-    return validNameRegex.test(name)
+    const validNameRegex = /^[a-zA-Z0-9_]+$/;
+    const isValid = validNameRegex.test(name)
+    if (DEBUG_MODE) {
+        console.log(chalk.blue(`[DEBUG] Config name validation for "${name}": ${isValid}`))
+    }
+    return isValid;
 }
 
 /**
@@ -34,7 +47,11 @@ function isValidConfigName(name) {
  * @returns {string} テンプレートディレクトリのフルパス
  */
 function getTemplatePath(templateName) {
-    return path.join(SERVER_TEMPLATE_BASE_PATH, templateName);
+    const fullPath = path.join(SERVER_TEMPLATE_BASE_PATH, templateName)
+    if (DEBUG_MODE) {
+        console.log(chalk.green(`[DEBUG] Resolved template path for "${templateName}": ${fullPath}`))
+    }
+    return fullPath;
 }
 
 /**
@@ -43,7 +60,7 @@ function getTemplatePath(templateName) {
  * @returns {string} 構成ディレクトリのフルパス
  */
 function getConfigPath(configName) {
-    return path.join(SERVER_CONFIG_BASE_PATH, configName);
+    return path.join(SERVER_CONFIG_BASE_PATH, configName)
 }
 
 /**
@@ -111,25 +128,25 @@ async function copyDirectoryRecursive(src, dest) {
  * @returns {Promise<object|null>} メタデータオブジェクト、ファイルがない場合は null
  */
 async function readMetadata(configName) {
-    const metaPath = path.join(getConfigPath(configName), 'metadata.xml');
+    const metaPath = path.join(getConfigPath(configName), 'metadata.xml')
     try {
-        const xmlData = await fs.readFile(metaPath, 'utf-8');
-        const result = await parser.parseStringPromise(xmlData);
+        const xmlData = await fs.readFile(metaPath, 'utf-8')
+        const result = await parser.parseStringPromise(xmlData)
         // metadata ルート要素とその中の assigned_port を数値で返すように試みる
         if (result.metadata) {
             if (result.metadata.assigned_port && result.metadata.assigned_port[0]) {
                  // ポート番号があれば数値に変換して追加
-                 result.metadata.assigned_port_int = parseInt(result.metadata.assigned_port[0], 10);
+                 result.metadata.assigned_port_int = parseInt(result.metadata.assigned_port[0], 10)
             }
             return result.metadata;
         }
-        return null;
+        return null
     } catch (error) {
         if (error.code === 'ENOENT') {
-            return null; // ファイルが存在しない
+            return null // ファイルが存在しない
         }
-        console.error(`Error reading metadata for ${configName}:`, error);
-        throw new Error(`metadata.xml の読み込みに失敗しました: ${configName}`);
+        console.error(`Error reading metadata for ${configName}:`, error)
+        throw new Error(`metadata.xml の読み込みに失敗しました: ${configName}`)
     }
 }
 
@@ -141,26 +158,46 @@ async function readMetadata(configName) {
  * @param {number|null} [assignedPort=null] 割り当てられたポート番号 (省略可能)
  * @returns {Promise<void>}
  */
-async function writeMetadata(configName, creatorId, assignedPort = null) { // ★★★ assignedPort 引数追加 (デフォルト null) ★★★
-    const metaPath = path.join(getConfigPath(configName), 'metadata.xml');
+async function writeMetadata(configName, creatorId, assignedPort = null) {
+    const metaPath = path.join(getConfigPath(configName), 'metadata.xml')
+    const metadataDir = path.dirname(metaPath)
+
+    // ディレクトリが存在しない場合は作成
+    try {
+        await fs.mkdir(metadataDir, { recursive: true })
+    } catch (mkdirError) {
+        console.error(`Failed to create directory for metadata: ${metadataDir}`, mkdirError)
+        throw new Error(`メタデータディレクトリの作成に失敗しました: ${metadataDir}`)
+    }
+
+    // 既にmetadata.xmlが存在する場合はエラーを出す
+    try {
+        await fs.access(metaPath)
+        throw new Error(`構成名 "${configName}" は既に存在します。別の名前を指定してください。`)
+    } catch (accessError) {
+        if (accessError.code !== 'ENOENT') {
+            throw accessError // 他のエラーは再スロー
+        }
+    }
+
     const metadataContent = {
         creator_id: creatorId,
         creation_timestamp: new Date().toISOString(),
-    };
-    // ポート番号が指定されていれば追加
-    if (assignedPort !== null && !isNaN(assignedPort)) { // ★★★ ポート番号があれば追加 ★★★
+    }
+
+    if (assignedPort !== null) {
         metadataContent.assigned_port = assignedPort;
     }
-    const metadata = {
-        metadata: metadataContent // ルート要素
-    };
+
+    const metadata = { metadata: metadataContent }
+
     try {
-        const xml = builder.buildObject(metadata);
-        await fs.writeFile(metaPath, xml);
-        console.log(`Metadata written for ${configName}: Creator ID ${creatorId}${assignedPort !== null ? `, Port ${assignedPort}` : ''}`);
+        const xml = builder.buildObject(metadata)
+        await fs.writeFile(metaPath, xml)
+        console.log(`Metadata written for ${configName}: Creator ID ${creatorId}${assignedPort !== null ? `, Port ${assignedPort}` : ''}`)
     } catch (error) {
-        console.error(`Error writing metadata for ${configName}:`, error);
-        throw new Error(`metadata.xml の書き込みに失敗しました: ${configName}`);
+        console.error(`Error writing metadata for ${configName}:`, error)
+        throw new Error(`metadata.xml の書き込みに失敗しました: ${configName}`)
     }
 }
 
@@ -181,79 +218,6 @@ async function readDescription(templateName) {
         console.warn(`Could not read description for template ${templateName}:`, error)
         return "説明の読み込みに失敗"
     }
-}
-
-// --- 既存の findServerPidByTitle, findAllServerPidsByTitlePattern, forceStopProcess も含める ---
-// (文字コード処理 iconvLite が必要なら残す)
-
-/**
- * 指定されたウィンドウタイトルを持つサーバープロセスのPIDを検索する
- * @param {string} windowTitle 検索するウィンドウタイトル (例: "sws_examplename1")
- * @returns {Promise<number|null>} プロセスID、見つからない場合は null
- */
-function findServerPidByTitle(windowTitle) {
-    return new Promise((resolve, reject) => {
-        const command = `tasklist /fi "imagename eq ${SERVER_EXECUTABLE_NAME}" /fi "windowtitle eq ${windowTitle}" /fo csv /nh`
-        exec(command, { encoding: 'buffer' }, (error, stdoutBuffer, stderrBuffer) => {
-            const stderr = iconvLite.decode(stderrBuffer, 'cp932').trim()
-            if (error) {
-                if (stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                    return resolve(null)
-                }
-                return reject(`タスクリストの実行に失敗しました (${windowTitle}): ${error.message}\nstderr: ${stderr}`)
-            }
-             if (stderr && !stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                console.warn(`タスクリスト実行時の標準エラー (${windowTitle}): ${stderr}`)
-            }
-
-            const stdout = iconvLite.decode(stdoutBuffer, 'cp932')
-            const lines = stdout.trim().split('\n')
-            const processes = lines
-                .map(line => line.match(/"([^"]*)","([^"]*)","([^"]*)","([^"]*)","([^"]*)"/))
-                .filter(match => match && typeof match[2] === 'string' && match[2].trim())
-                .map(match => parseInt(match[2].replace(/,/g, ''), 10))
-
-            if (processes.length === 0) {
-                resolve(null)
-            } else if (processes.length === 1) {
-                resolve(processes[0])
-            } else {
-                reject(`エラー: ウィンドウタイトル "${windowTitle}" のプロセスが複数見つかりました。 PIDs: ${processes.join(', ')}`)
-            }
-        })
-    })
-}
-
-/**
- * 指定されたパターンに一致するウィンドウタイトルを持つすべてのサーバープロセスのPIDリストを取得する
- * @param {string} titlePattern ウィンドウタイトルのパターン (例: "sws_*")
- * @returns {Promise<number[]>} PIDの配列
- */
-function findAllServerPidsByTitlePattern(titlePattern) {
-     return new Promise((resolve, reject) => {
-        const command = `tasklist /fi "imagename eq ${SERVER_EXECUTABLE_NAME}" /fi "windowtitle eq ${titlePattern}" /fo csv /nh`
-         exec(command, { encoding: 'buffer' }, (error, stdoutBuffer, stderrBuffer) => {
-            const stderr = iconvLite.decode(stderrBuffer, 'cp932').trim()
-             if (error) {
-                 if (stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                     return resolve([])
-                 }
-                return reject(`タスクリスト(パターン検索)の実行に失敗しました: ${error.message}\nstderr: ${stderr}`)
-            }
-             if (stderr && !stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                console.warn(`タスクリスト(パターン検索)実行時の標準エラー: ${stderr}`)
-            }
-
-             const stdout = iconvLite.decode(stdoutBuffer, 'cp932')
-             const lines = stdout.trim().split('\n')
-             const processes = lines
-                .map(line => line.match(/"([^"]*)","([^"]*)","([^"]*)","([^"]*)","([^"]*)"/))
-                .filter(match => match && typeof match[2] === 'string' && match[2].trim())
-                .map(match => parseInt(match[2].replace(/,/g, ''), 10))
-
-            resolve(processes)
-         })
-     })
 }
 
 /**
@@ -290,131 +254,16 @@ function forceStopProcess(pid) {
 }
 // ---------------------------------------------------------------------------------
 
-
-/**
- * 指定されたウィンドウタイトルを持つ server64.exe のプロセスIDを検索する
- * @param {string} windowTitle 検索するウィンドウタイトル (例: "sws_examplename1")
- * @returns {Promise<number|null>} プロセスID、見つからない場合は null
- */
-function findServerPidByTitle(windowTitle) {
-    return new Promise((resolve, reject) => {
-        // tasklist で windowtitle を指定して検索
-        const command = `tasklist /fi "imagename eq ${SERVER_EXECUTABLE_NAME}" /fi "windowtitle eq ${windowTitle}" /fo csv /nh`
-        exec(command, { encoding: 'buffer' }, (error, stdoutBuffer, stderrBuffer) => {
-            const stderr = iconvLite.decode(stderrBuffer, 'cp932').trim()
-            if (error) {
-                 // プロセスが見つからない場合も stderr に "情報: 指定された検索条件に一致するタスクは実行されていません。" が出ることがある
-                 // error オブジェクトだけでは判断しきれない場合があるので stderr も見る
-                if (stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                    return resolve(null) // 見つからない場合は null を返す
-                }
-                // それ以外の実行エラー
-                return reject(`タスクリストの実行に失敗しました: ${error.message}\nstderr: ${stderr}`)
-            }
-            if (stderr && !stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                // stderr に予期せぬエラーメッセージが含まれる場合
-                console.warn(`タスクリスト実行時の標準エラー: ${stderr}`)
-            }
-
-            const stdout = iconvLite.decode(stdoutBuffer, 'cp932')
-            const lines = stdout.trim().split('\n')
-
-            // tasklistのCSV出力からPIDを抽出
-             const processes = lines
-                .map(line => line.match(/"([^"]*)","([^"]*)","([^"]*)","([^"]*)","([^"]*)"/)) // CSVパース
-                .filter(match => match && typeof match[2] === 'string' && match[2].trim()) // PID部分があるか確認
-                .map(match => parseInt(match[2].replace(/,/g, ''), 10)) // PID (2番目の要素)、桁区切りコンマを除去して数値化
-
-            if (processes.length === 0) {
-                resolve(null) // 見つからない
-            } else if (processes.length === 1) {
-                resolve(processes[0]) // PIDを返す
-            } else {
-                // 通常、windowtitleでフィルタすれば複数ヒットは考えにくいが一応残す
-                reject(`エラー: ウィンドウタイトル "${windowTitle}" のプロセスが複数見つかりました。 PIDs: ${processes.join(', ')}`)
-            }
-        })
-    })
-}
-
-/**
- * 指定されたパターンに一致するウィンドウタイトルを持つすべてのサーバープロセスのPIDリストを取得する
- * @param {string} titlePattern ウィンドウタイトルのパターン (例: "sws_*")
- * @returns {Promise<number[]>} PIDの配列
- */
-function findAllServerPidsByTitlePattern(titlePattern) {
-     return new Promise((resolve, reject) => {
-        const command = `tasklist /fi "imagename eq ${SERVER_EXECUTABLE_NAME}" /fi "windowtitle eq ${titlePattern}" /fo csv /nh`
-         exec(command, { encoding: 'buffer' }, (error, stdoutBuffer, stderrBuffer) => {
-            const stderr = iconvLite.decode(stderrBuffer, 'cp932').trim()
-             if (error) {
-                 if (stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                     return resolve([]) // 見つからない場合は空配列
-                 }
-                return reject(`タスクリスト(パターン検索)の実行に失敗しました: ${error.message}\nstderr: ${stderr}`)
-            }
-             if (stderr && !stderr.includes('指定された検索条件に一致するタスクは実行されていません')) {
-                console.warn(`タスクリスト(パターン検索)実行時の標準エラー: ${stderr}`)
-            }
-
-             const stdout = iconvLite.decode(stdoutBuffer, 'cp932')
-             const lines = stdout.trim().split('\n')
-             const processes = lines
-                .map(line => line.match(/"([^"]*)","([^"]*)","([^"]*)","([^"]*)","([^"]*)"/))
-                .filter(match => match && typeof match[2] === 'string' && match[2].trim())
-                .map(match => parseInt(match[2].replace(/,/g, ''), 10))
-
-            resolve(processes) // PIDの配列を返す
-         })
-     })
-}
-
-
-/**
- * 指定されたPIDのプロセスを強制終了する
- * @param {number} pid 終了させるプロセスID
- * @returns {Promise<string>} 実行結果のメッセージ
- */
-function forceStopProcess(pid) {
-    return new Promise((resolve, reject) => {
-        const command = `taskkill /F /PID ${pid}`
-        exec(command, { encoding: 'buffer' }, (error, stdoutBuffer, stderrBuffer) => {
-            const stdout = iconvLite.decode(stdoutBuffer, 'cp932').trim()
-            const stderr = iconvLite.decode(stderrBuffer, 'cp932').trim()
-
-            if (error) {
-                // プロセスが見つからないエラーは、既に停止しているとみなせる場合もある
-                if (stderr.includes('プロセスが見つかりません') || error.code === 128) {
-                    return resolve(`PID ${pid} は見つかりませんでしたが、停止済みとみなします。`)
-                }
-                return reject(`PID ${pid} の停止に失敗しました: ${error.message}\nstderr: ${stderr}`)
-            }
-             if (stderr) {
-                // 成功時にも stderr にメッセージが出ることがあるので警告に留める
-                console.warn(`taskkill stderr (PID: ${pid}): ${stderr}`)
-            }
-            if (stdout.includes('成功') || stdout.includes('Success')) {
-                resolve(`サーバーを停止しました。`)
-            } else if (stdout) {
-                console.warn(`taskkill の予期せぬ応答 (PID: ${pid}): ${stdout}`)
-                resolve(`PID ${pid} の停止コマンドは実行されましたが、応答が予期せぬものでした: ${stdout}`)
-            } else {
-            resolve(`サーバーを停止しました。`)
-            }
-        })
-    })
-}
-
 /**
  * 現在 Bot が管理する構成で使用中のポート番号リストを取得する
  * metadata.xml と server_config.xml の両方から取得を試みる
  * @returns {Promise<number[]>} 使用中のポート番号の配列
  */
 async function getUsedPorts() {
-    const usedPorts = new Set();
+    const usedPorts = new Set()
     try {
-        const entries = await fs.readdir(SERVER_CONFIG_BASE_PATH, { withFileTypes: true });
-        const configDirs = entries.filter(entry => entry.isDirectory());
+        const entries = await fs.readdir(SERVER_CONFIG_BASE_PATH, { withFileTypes: true })
+        const configDirs = entries.filter(entry => entry.isDirectory())
 
         for (const dir of configDirs) {
             const configName = dir.name;
@@ -422,42 +271,42 @@ async function getUsedPorts() {
 
             // 1. metadata.xml からポート取得試行
             try {
-                 const metadata = await readMetadata(configName);
+                 const metadata = await readMetadata(configName)
                  if (metadata?.assigned_port_int && !isNaN(metadata.assigned_port_int)) {
-                    usedPorts.add(metadata.assigned_port_int);
-                    portFound = true;
+                    usedPorts.add(metadata.assigned_port_int)
+                    portFound = true
                  }
             } catch (metaError) {
-                 console.warn(`[WARN] Could not read metadata port for ${configName}: ${metaError.message}`);
+                 console.warn(`[WARN] Could not read metadata port for ${configName}: ${metaError.message}`)
             }
 
             // 2. メタデータにポートがなければ server_config.xml から取得試行
             if (!portFound) {
-                const configFilePath = path.join(SERVER_CONFIG_BASE_PATH, configName, 'server_config.xml');
+                const configFilePath = path.join(SERVER_CONFIG_BASE_PATH, configName, 'server_config.xml')
                 try {
-                    const xmlData = await fs.readFile(configFilePath, 'utf-8');
-                    const result = await parser.parseStringPromise(xmlData);
+                    const xmlData = await fs.readFile(configFilePath, 'utf-8')
+                    const result = await parser.parseStringPromise(xmlData)
                     if (result.server_data?.$?.port) {
-                        const port = parseInt(result.server_data.$.port, 10);
+                        const port = parseInt(result.server_data.$.port, 10)
                         if (!isNaN(port)) {
-                            usedPorts.add(port);
+                            usedPorts.add(port)
                         } else {
-                            console.warn(`[WARN] Invalid port format found in ${configFilePath}: ${result.server_data.$.port}`);
+                            console.warn(`[WARN] Invalid port format found in ${configFilePath}: ${result.server_data.$.port}`)
                         }
                     }
                 } catch (error) {
                      if (error.code !== 'ENOENT') {
-                        console.warn(`[WARN] Could not read or parse ${configFilePath}: ${error.message}`);
+                        console.warn(`[WARN] Could not read or parse ${configFilePath}: ${error.message}`)
                      }
                 }
             }
         }
     } catch (error) {
-         console.error(`[ERROR] Error reading config directories in ${SERVER_CONFIG_BASE_PATH}: ${error.message}`);
-         throw new Error('構成ディレクトリの読み込みに失敗しました。パスが正しいか確認してください。');
+         console.error(`[ERROR] Error reading config directories in ${SERVER_CONFIG_BASE_PATH}: ${error.message}`)
+         throw new Error('構成ディレクトリの読み込みに失敗しました。パスが正しいか確認してください。')
     }
-    console.log('[DEBUG] Currently used ports found:', Array.from(usedPorts));
-    return Array.from(usedPorts);
+    console.log('[DEBUG] Currently used ports found:', Array.from(usedPorts))
+    return Array.from(usedPorts)
 }
 
 /**
@@ -468,15 +317,15 @@ async function getUsedPorts() {
  * @returns {number|null} 利用可能なポート番号、見つからない場合は null
  */
 function findAvailablePort(minPort, maxPort, usedPorts) {
-    const usedSet = new Set(usedPorts);
+    const usedSet = new Set(usedPorts)
     for (let port = minPort; port <= maxPort; port++) {
         if (!usedSet.has(port)) {
-            console.log(`[DEBUG] Found available port: ${port}`);
+            console.log(`[DEBUG] Found available port: ${port}`)
             return port;
         }
     }
-    console.log(`[DEBUG] No available port found in range ${minPort}-${maxPort}. Used:`, usedPorts);
-    return null; // 空きがない
+    console.log(`[DEBUG] No available port found in range ${minPort}-${maxPort}. Used:`, usedPorts)
+    return null // 空きがない
 }
 
 
@@ -487,34 +336,49 @@ function findAvailablePort(minPort, maxPort, usedPorts) {
  * @returns {Promise<void>}
  */
 async function updateConfigXmlPort(configName, newPort) {
-    const configFilePath = path.join(getConfigPath(configName), 'server_config.xml');
+    const configFilePath = path.join(getConfigPath(configName), 'server_config.xml')
     try {
-        const xmlData = await fs.readFile(configFilePath, 'utf-8');
-        const result = await parser.parseStringPromise(xmlData);
+        const xmlData = await fs.readFile(configFilePath, 'utf-8')
+        const result = await parser.parseStringPromise(xmlData)
 
         // server_data 要素と属性オブジェクトが存在することを確認・作成
         if (!result.server_data) {
-            console.warn(`[WARN] <server_data> tag not found in ${configFilePath}. Creating it.`);
-            result.server_data = {};
+            console.warn(`[WARN] <server_data> tag not found in ${configFilePath}. Creating it.`)
+            result.server_data = {}
         }
         if (!result.server_data.$) {
-             console.warn(`[WARN] Attributes object for <server_data> not found in ${configFilePath}. Creating it.`);
-            result.server_data.$ = {};
+             console.warn(`[WARN] Attributes object for <server_data> not found in ${configFilePath}. Creating it.`)
+            result.server_data.$ = {}
         }
 
         const oldPort = result.server_data.$.port;
-        result.server_data.$.port = String(newPort); // ポート番号を文字列として設定
+        result.server_data.$.port = String(newPort) // ポート番号を文字列として設定
 
-        const updatedXml = builder.buildObject(result);
-        await fs.writeFile(configFilePath, updatedXml);
-        console.log(`[INFO] Updated port for ${configName} from ${oldPort || '(not set)'} to ${newPort} in ${configFilePath}`);
+        const updatedXml = builder.buildObject(result)
+        await fs.writeFile(configFilePath, updatedXml)
+        console.log(`[INFO] Updated port for ${configName} from ${oldPort || '(not set)'} to ${newPort} in ${configFilePath}`)
 
     } catch (error) {
-        console.error(`[ERROR] Error updating port for ${configName} in ${configFilePath}:`, error);
-        throw new Error(`server_config.xml のポート更新に失敗しました: ${configName}`);
+        console.error(`[ERROR] Error updating port for ${configName} in ${configFilePath}:`, error)
+        throw new Error(`server_config.xml のポート更新に失敗しました: ${configName}`)
     }
 }
 
+/**
+ * ファイルにデータを書き込むユーティリティ関数
+ * @param {string} filePath - 書き込むファイルのパス
+ * @param {string} data - 書き込むデータ
+ * @returns {Promise<void>} - 書き込み完了時に解決されるPromise
+ */
+async function writeFile(filePath, data) {
+    try {
+        await fs.writeFile(filePath, data, 'utf8')
+        console.log(`[INFO] File written successfully: ${filePath}`)
+    } catch (error) {
+        console.error(`[ERROR] Failed to write file: ${filePath}`, error)
+        throw error;
+    }
+}
 
 module.exports = {    
     isValidConfigName,
@@ -529,7 +393,6 @@ module.exports = {
     getUsedPorts,
     findAvailablePort,
     updateConfigXmlPort,
-    findServerPidByTitle,
-    findAllServerPidsByTitlePattern,
     forceStopProcess,
+    writeFile,
 }

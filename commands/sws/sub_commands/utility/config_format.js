@@ -3,7 +3,17 @@
  * server_config.xml の期待されるフォーマット定義
  * 将来的なゲームアップデートで変更があった場合に、このファイルを更新することで対応しやすくします。
  */
-const path = require('path');
+const path = require('path')
+const chalk = require('chalk') // chalkのインポート形式を修正
+
+// デバッグモードの設定
+const DEBUG_MODE = true // true: 詳細なデバッグログを表示, false: 基本的なログのみ
+
+if (DEBUG_MODE) {
+    console.log(chalk.blue('[DEBUG] Initializing configuration format validation...'))
+} else {
+    console.log('[INFO] Initializing configuration format validation...')
+}
 
 // デフォルトミッションとして許可するパスのリスト
 const defaultPlaylistPaths = Object.freeze([
@@ -35,7 +45,7 @@ const defaultPlaylistPaths = Object.freeze([
     "rom/data/missions/default_tutorial",
     "rom/data/missions/dlc_weapons_ai",
     "rom/data/missions/dlc_zombies",
-]);
+])
 
 // ★★★ デフォルトの base_island として許可するパスのリスト ★★★
 // (実際の rom/data/tiles/ 内のファイル名に合わせてください)
@@ -110,8 +120,35 @@ const defaultBaseIslandPaths = Object.freeze([
   "data/tiles/creative_island.xml",   // island_15.xml との関係を確認
   "data/tiles/oilrig_a.xml", // oil_rig_playerbase.xml, arctic_tile_12_oilrig.xml との関係を確認
   "data/tiles/oilrig_b.xml", 
-]);
+])
 
+// 設定フォーマットの検証関数
+function validateConfigFormat(config) {
+    if (DEBUG_MODE) {
+        console.log(chalk.blue('[DEBUG] Validating configuration format...'))
+    }
+
+    if (!config || typeof config !== 'object') {
+        console.error(chalk.red('[ERROR] Invalid configuration: Config is not an object.'))
+        return false;
+    }
+
+    // 必須フィールドの検証
+    const requiredFields = ['name', 'port', 'max_players']
+    for (const field of requiredFields) {
+        if (!(field in config)) {
+            console.error(chalk.red(`[ERROR] Missing required field: ${field}`))
+            return false;
+        }
+    }
+
+    if (DEBUG_MODE) {
+        console.log(chalk.green('[DEBUG] Configuration format validated successfully.'))
+    }
+    return true
+}
+
+module.exports = { validateConfigFormat }
 
 module.exports = Object.freeze({
     // <server_data> 要素の定義
@@ -216,27 +253,27 @@ module.exports = Object.freeze({
             if (typeof value !== 'string' || value.length === 0) return false;
             // 1. デフォルトミッションリストに含まれるかチェック
             if (defaultPlaylistPaths.includes(value)) {
-                return true;
+                return true
             }
             // 2. ワークショッププレイリスト形式かチェック ("rom/data/workshop_missions/数字ID" の形式、末尾のサブディレクトリは不可)
             const workshopPlaylistRegex = /^rom\/data\/workshop_missions\/\d{10,11}$/;
-            return workshopPlaylistRegex.test(value);
+            return workshopPlaylistRegex.test(value)
         },
         // Modパス形式チェック (存在確認は checkPathExists で)
         filepath_mod: (value) => {
             if (typeof value !== 'string' || value.length === 0) return false;
             // Windows/Linuxの絶対パス or 相対パス (単純チェック)
             // ワークショップModを <path> で指定する場合は絶対パスになることが多い
-            return path.isAbsolute(value) || value.includes('/') || value.includes('\\');
+            return path.isAbsolute(value) || value.includes('/') || value.includes('\\')
         },
         // ★★★ Base Island パス: デフォルトリストに含まれるかチェック ★★★
         filepath_baseisland: (value) => {
             if (typeof value !== 'string' || value.length === 0) return false;
-            return defaultBaseIslandPaths.includes(value);
+            return defaultBaseIslandPaths.includes(value)
         }
     },
 
     // デフォルトリストをエクスポート (check_config.js で使うため)
     defaultPlaylistPaths,
     defaultBaseIslandPaths, // ★★★ Base Island のリストもエクスポート ★★★
-});
+})

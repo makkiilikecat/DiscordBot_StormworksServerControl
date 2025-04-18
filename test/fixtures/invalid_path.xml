@@ -1,0 +1,5 @@
+<server_data>
+    <playlists>
+        <path path="invalid/path/to/mission" />
+    </playlists>
+</server_data>

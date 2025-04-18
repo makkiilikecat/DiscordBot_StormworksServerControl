@@ -1,0 +1,4 @@
+<server_data>
+    <playlists>
+        <path path="rom/data/missions/default_ai" />
+    <!-- Missing closing tag for <server_data>
