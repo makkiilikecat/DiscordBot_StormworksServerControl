@@ -58,9 +58,7 @@ module.exports = {
                     .setRequired(true)))
 
         .addSubcommand(subcommand => subcommand.setName('status')
-            .setDescription('サーバーの状態を表示します')
-                .addStringOption(option => option.setName('name')
-                    .setDescription('状態を確認するサーバーの名前 (省略時はすべて)')))
+            .setDescription('サーバーの状態を表示します'))
 
         .addSubcommand(subcommand => subcommand.setName('create')
             .setDescription('テンプレートから新しいサーバー構成を作成します')
@@ -97,7 +95,12 @@ module.exports = {
                     .setRequired(true)))
             
         .addSubcommand(subcommand => subcommand.setName('register_my_server')
-                .setDescription('あなたの物理サーバーをBotに登録し、認証トークンを取得します。'))
+                .setDescription('あなたの物理サーバーをBotに登録し、認証トークンを取得します。')
+                .addStringOption(option => option.setName('server_name')
+                    .setDescription('作成する物理サーバーの名前（省略すると[〇〇のサーバー]）')
+                    .setRequired(false)
+                    .setMinLength(1)
+                    .setMaxLength(50))) // 文字数制限
         
         ,   // ,は必須
         
@@ -140,7 +143,10 @@ module.exports = {
                 interaction.customId.includes('select_mods')) {
                 commandToExecute = 'preset_create'
             } else if (interaction.customId.includes('remove')) {
-                 commandToExecute = 'remove' // remove コマンドのボタンの場合
+                commandToExecute = 'remove' // remove コマンドのボタンの場合
+            } else if (interaction.customId.startsWith('stop_confirm_') ||   
+                       interaction.customId.startsWith('stop_cancel_')) {
+                commandToExecute = 'stop'
             }
             // 他のボタン/メニューに対応するサブコマンドも追加...
             else {

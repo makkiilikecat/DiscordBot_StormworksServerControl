@@ -47,6 +47,7 @@ async function handleConnection(ws, req) {
     const { creatorId, tokenData } = validationResult; // tokenData を取得
     // ★★★ 物理サーバーの識別子としてトークン自体を使用 ★★★
     const physicalServerId = token; // トークンを物理サーバーIDとする
+    const physicalServerName = tokenData?.name || '';
 
     log('INFO', `[接続ハンドラ] 認証成功 from ${ip}. Token: ...${token.slice(-4)}, Creator: ${creatorId}`);
 
@@ -69,6 +70,8 @@ async function handleConnection(ws, req) {
         ws: ws,
         ip: ip,
         creatorId: creatorId,
+        physicalServerName: physicalServerName, // ★ 物理サーバー名を追加
+        connectedAt: new Date().toISOString(),  
         tokenCreatedAt: tokenData?.createdAt, // ★ トークン作成日時も保持 (デバッグ用)
         lastPingTime: null,
         ping: null,

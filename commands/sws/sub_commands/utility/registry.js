@@ -34,18 +34,14 @@ if (!config.configBasePath) throw new Error('[Registry Error] 環境変数 SERVE
 config.serverDirectory = process.env.SERVER_DIR_NAME
 if (!config.serverDirectory) throw new Error('[Registry Error] 環境変数 SERVER_DIR_NAME が設定されていません。')
 
+config.maxServerConfigCount = process.env.MAX_SERVER_CONFIG_COUNT
+if (!config.maxServerConfigCount) throw new Error('[Registry Error] 環境変数 MAX_SERVER_CONFIG_COUNT が設定されていません。')
+if (isNaN(config.maxServerConfigCount)) throw new Error('[Registry Error] 環境変数 MAX_SERVER_CONFIG_COUNT が数値ではありません。')
+
 // --- 実行ファイル名 ---
 config.serverExecutableName = process.env.SERVER_EXE_NAME
 if (!config.serverExecutableName) throw new Error('[Registry Error] 環境変数 SERVER_EXE_NAME が設定されていません。')
 if (!config.serverExecutableName.endsWith('.exe')) throw new Error('[Registry Error] 環境変数 SERVER_EXE_NAME は拡張子 .exe を含む必要があります。')
-
-// --- ポート範囲設定 ---
-config.minPort = parseInt(process.env.MIN_PORT, 10)
-config.maxPort = parseInt(process.env.MAX_PORT, 10)
-if (isNaN(config.minPort)) throw new Error('[Registry Error] 環境変数 MIN_PORT が数値として無効です。')
-if (isNaN(config.maxPort)) throw new Error('[Registry Error] 環境変数 MAX_PORT が数値として無効です。')
-if (config.minPort > config.maxPort) throw new Error(`[Registry Error] ポート範囲が無効です: MIN_PORT (<span class="math-inline">\{config\.minPort\}\) が MAX\_PORT \(</span>{config.maxPort}) より大きいです。`)
-if (config.minPort < 1024 || config.maxPort > 65535) throw new Error(`[Registry Error] ポート範囲が無効です: MIN_PORT (<span class="math-inline">\{config\.minPort\}\) は 1024 以上、MAX\_PORT \(</span>{config.maxPort}) は 65535 以下でなければなりません。`)
 
 // --- SteamCMD 設定 ---
 config.steamCmdPath = process.env.STEAMCMD_PATH;
@@ -77,7 +73,6 @@ console.log(`Template Base Path: ${config.templateBasePath}`)
 console.log(`Bot Config Base Path: ${config.configBasePath}`)
 console.log(`Server Directory: ${config.serverDirectory}`)
 console.log(`Server Executable: ${config.serverExecutableName}`)
-console.log(`Port Range: ${config.minPort} - ${config.maxPort}`)
 console.log(`SteamCMD Path: ${config.steamCmdPath}`)
 console.log(`SteamCMD Login Args: ${config.steamCmdLoginArgs}`)
 console.log(`Stormworks App ID: ${config.stormworksAppId}`)

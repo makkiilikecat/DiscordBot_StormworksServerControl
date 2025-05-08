@@ -39,7 +39,6 @@ const messageTemplates = {
     // =============================================
     ERROR_ENV_VAR_MISSING: '🛠️ 設定エラー: Botの動作に必要な設定 (`{varName}`) が見つかりません。Bot管理者に連絡してください。',
     ERROR_ENV_VAR_INVALID: '🛠️ 設定エラー: Botの設定 (`{varName}`) の値が無効です。Bot管理者に連絡してください。',
-    ERROR_PORT_RANGE_INVALID: '🛠️ 設定エラー: Botのポート番号範囲 (MIN_PORT, MAX_PORT) の設定が無効です。Bot管理者に連絡してください。',
     ERROR_PORT_NOT_AVAILABLE: '⚠️ リソースエラー: サーバーに使用できるポート番号 ({minPort}～{maxPort}) が見つかりません。不要なサーバー構成を削除するか、Bot管理者に相談してください。',
     INFO_TEMPLATE_LIST_EMPTY: 'ℹ️ 利用可能なテンプレートがありません。管理者がテンプレートを準備する必要があります。', // エラーというより情報
 
@@ -53,7 +52,7 @@ const messageTemplates = {
     ERROR_METADATA_WRITE: '📂 ファイルエラー: 構成 `{configName}` の情報ファイルの書き込みに失敗しました。Bot管理者に連絡してください。',
     ERROR_CONFIG_XML_READ: '📂 ファイルエラー: 構成 `{configName}` の設定ファイルの読み込みに失敗しました。Bot管理者に連絡してください。',
     ERROR_CONFIG_XML_WRITE: '📂 ファイルエラー: 構成 `{configName}` の設定ファイルの書き込みに失敗しました。Bot管理者に連絡してください。',
-    ERROR_CONFIG_XML_PORT_UPDATE: '📂 ファイルエラー: 構成 `{configName}` の設定ファイル（ポート番号）の更新に失敗しました。Bot管理者に連絡してください。',
+    ERROR_CONFIG_XML_UPDATE: '📂 ファイルエラー: 構成 `{configName}` の設定ファイルの更新に失敗しました。Bot管理者に連絡してください。',
     ERROR_DIRECTORY_COPY: '📂 ファイルエラー: テンプレート `{templateName}` から `{configName}` へのコピー中にエラーが発生しました。Bot管理者に連絡してください。',
     ERROR_DIRECTORY_REMOVE: '📂 ファイルエラー: 構成 `{configName}` の削除中にエラーが発生しました。Bot管理者に連絡してください。',
     ERROR_DIRECTORY_READ: '📂 ファイルエラー: サーバー構成フォルダの読み込みに失敗しました。Bot管理者に連絡してください。',
@@ -109,7 +108,7 @@ const messageTemplates = {
 /**
  * メッセージを取得し、プレースホルダーを置換する関数
  * @param {keyof messageTemplates} key メッセージキー
- * @param {object} [placeholders={}] プレースホルダーとその値のオブジェクト (例: { configName: 'my_server', port: 45001 })
+ * @param {object} [placeholders={}] プレースホルダーとその値のオブジェクト (例: { configName: 'my_server' })
  * @returns {string} 置換後のメッセージ文字列
  */
 function get(key, placeholders = {}) {

@@ -5,6 +5,7 @@ const serverUtils = require('./utility/server_utils'); // サーバー関連ユ�
 const { getConnectedClients } = require('./utility/websocket/client_manager'); // 接続クライアント取得
 const { log, getOrCreateLogThread } = require('../../../utility/text_chat_logger'); // ロガー
 const messages = require('./utility/messages'); // メッセージ管理
+const clientManager = require('./utility/websocket/client_manager');
 
 // serverInstances Map を外部から受け取る想定
 // この Map には { clientId: string, ip: string, creatorId: string, status: 'running' | 'stopped' | ... } のような情報が入る
@@ -17,10 +18,9 @@ module.exports = {
      */
     async execute(interaction, serverInstances) {
         const logThread = await getOrCreateLogThread(interaction); // ログスレッドを取得/作成
-        const configName = interaction.options.getString('name');
 
         try {
-            log('INFO', `サーバー "${configName}" の停止リクエストを受信しました。`, { interaction, thread: logThread });
+            log('INFO', `サーバーの停止リクエストを受信しました。`, { interaction, thread: logThread });
 
             if (interaction.isChatInputCommand()) {
                 await handleStopCommand(interaction, serverInstances, logThread);
@@ -37,7 +37,7 @@ module.exports = {
                 }
             }
         } catch (error) {
-            log('ERROR', `サーバー "${configName}" の停止中にエラーが発生しました: ${error.message}`, { error, interaction, thread: logThread });
+            log('ERROR', `サーバーの停止中にエラーが発生しました: ${error.message}`, { error, interaction, thread: logThread });
             await interaction.reply({
                 content: '❌ サーバーの停止中にエラーが発生しました。',
                 ephemeral: true
@@ -67,15 +67,15 @@ async function handleStopCommand(interaction, serverInstances, logThread) {
         return;
     }
 
-    const { clientId } = serverState; // 状態からクライアントIDを取得
-    if (!clientId) {
-        log('ERROR', `サーバー "${instanceName}" の状態にクライアントIDが含まれていません。`, { interaction, data: serverState, thread: logThread });
+    const { clientId, token } = serverState; // 状態からクライアントIDを取得
+    if (!clientId || !token) {
+        log('ERROR', `サーバー "${instanceName}" の状態にクライアントIDまたはトークンが含まれていません。`, { interaction, data: serverState, thread: logThread });
         await interaction.reply({ content: messages.get('ERROR_COMMAND_INTERNAL'), ephemeral: true });
         return;
     }
 
     // サーバー識別子とログ用IPを取得
-    const { serverIdentifier, logIp } = await getServerIdentifiers(interaction, clientId);
+    const { serverIdentifier, logIp } = await getPhysicalServerIdentifier(interaction, clientId);
     log('DEBUG', `停止対象サーバー: ${serverIdentifier} (ClientID: ${clientId}, IP: ${logIp})`, { interaction, thread: logThread });
 
     try {
@@ -117,7 +117,16 @@ async function handleStopConfirmation(interaction, serverInstances, logThread) {
     const instanceName = parts[2];
     const clientId = parts[3]; // このボタンが押された時点でのクライアントID
 
-    const { serverIdentifier, logIp } = await getServerIdentifiers(interaction, clientId); // 識別子を再取得
+    // ★ Stage 8: 識別子取得 (clientIdしかない場合があるため、clientInfoは取得しない方向で)
+    const serverState = serverInstances.get(instanceName); // 最新の状態を取得
+    const token = serverState?.token; // ボタンID生成時のトークンを使うのが安全かもしれない
+    if (!token) {
+        log('ERROR', `[停止][確認] サーバー "${instanceName}" のトークンが見つかりません。処理中断。`, { interaction, thread: logThread });
+        await interaction.update({ content: '内部エラーが発生しました。', components: [], embeds: [] });
+        return;
+    }
+
+    const { serverIdentifier, logIp } = await getPhysicalServerIdentifier(interaction, clientId); // 識別子を再取得
 
     if (action === 'cancel') {
         log('INFO', `ユーザー ${interaction.user.tag} がサーバー "${instanceName}" (${serverIdentifier}) の停止をキャンセルしました。`, { interaction, thread: logThread });
@@ -264,36 +273,41 @@ async function handleStopResult(interaction, result, instanceName, clientId, ser
  * @param {string} clientId
  * @returns {Promise<{serverIdentifier: string, logIp: string}>}
  */
-async function getServerIdentifiers(interaction, clientId) {
-    let serverIdentifier = `サーバー (ID: ${clientId.substring(0, 8)}...)`; // デフォルト
+async function getPhysicalServerIdentifier(client, clientId, token) {
+    // (message_handler.js と同じ実装をここにコピーまたはインポート)
+    let serverIdentifier = `物理サーバー (Token: ...${token?.slice(-4)})`;
     let logIp = '不明';
-    let userName = '不明なユーザー';
+    let physicalServerName = 'のサーバー';
+    let ownerName = '不明なユーザー';
+    let clientInfo = null;
 
-    try {
-        const connectedServers = getConnectedClients();
-        const clientInfo = connectedServers.find(client => client.id === clientId);
+     if(clientId) { clientInfo = clientManager.getClient(clientId); }
+     let tokenData = null;
+     if (!clientInfo && token) {
+         try {
+             const allTokens = await tokenManager.loadTokens();
+             tokenData = allTokens.find(t => t.token === token);
+         } catch (e) { log('ERROR', 'トークンデータ読み込み失敗 in getPhysicalServerIdentifier', { error: e }); }
+     } else if (clientInfo) {
+         tokenData = { creatorId: clientInfo.creatorId, name: clientInfo.physicalServerName };
+         logIp = clientInfo.ip;
+     }
 
-        if (clientInfo) {
-            logIp = clientInfo.ip;
-            const serverIndex = connectedServers.findIndex(client => client.id === clientId);
-            if (clientInfo.creatorId) {
-                try {
-                    const user = await interaction.client.users.fetch(clientInfo.creatorId).catch(() => null);
-                    if (user) {
-                        userName = user.username; // または user.tag
-                    } else {
-                        userName = `登録者ID:${clientInfo.creatorId.substring(0, 6)}...`;
-                    }
-                } catch (fetchError) {
-                    // ログは呼び出し元で記録される想定なのでここでは省略
-                    userName = `登録者ID:${clientInfo.creatorId.substring(0, 6)}...`;
-                }
+    if (tokenData) {
+        physicalServerName = tokenData.name || 'のサーバー';
+        if (tokenData.creatorId && client) {
+            try {
+                const user = await client.users?.fetch(tokenData.creatorId).catch(() => null);
+                if (user) { ownerName = user.displayName || user.username; }
+                else { ownerName = `登録者ID:${tokenData.creatorId.substring(0, 6)}...`; }
+            } catch (fetchError) {
+                log('WARN', `getServerIdentifiers内でユーザー(${tokenData.creatorId})情報取得失敗`, { error: fetchError, tokenEnding: `...${token?.slice(-4)}` });
+                ownerName = `登録者ID:${tokenData.creatorId.substring(0, 6)}...`;
             }
-            serverIdentifier = `${userName} のサーバー${serverIndex !== -1 ? ` ${serverIndex + 1}` : ''}`;
-        }
-    } catch (error) {
-        log('ERROR', 'getServerIdentifiers でエラー発生', { error, clientId, interaction });
+        } else if (tokenData.creatorId) { ownerName = `登録者ID:${tokenData.creatorId.substring(0, 6)}...`; }
+        serverIdentifier = `${ownerName}: ${physicalServerName}`; // ★ 新形式
     }
+    if (clientInfo) { logIp = clientInfo.ip; }
 
-    return { serverIdentifier, logIp };
+    return { serverIdentifier, logIp, clientInfo };
 }

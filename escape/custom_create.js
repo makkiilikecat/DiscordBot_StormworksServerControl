@@ -8,6 +8,7 @@ const utils = require('../../../escape/utils')
 const config = require('./utility/registry')
 const messages = require('./utility/messages')
 const checkConfig = require('./utility/check_config')
+const { extractWorkshopIdsAndTypes, prepareWorkshopItems, createPlaylistSymlinks } = require('./utility/workshop_downloader')
 const chalk = require('chalk') // ログの色分け用ライブラリ
 const { log } = require('../../../utility/text_chat_logger') // ロガーをインポート
 
@@ -89,32 +90,32 @@ module.exports = {
             console.log(`[INFO] Config file "${configFileAttachment.name}" validated successfully for ${configName}.`)
 
             // --- ステップ 2 & 3: ワークショップアイテムの準備 ---
-            //await interaction.editReply({ content: 'ワークショップアイテムの情報を抽出し、必要なアイテムを準備中 (ダウンロード含む)...', ephemeral: false })
-            //const requiredItems = extractWorkshopIdsAndTypes(parsedXmlData) // Map<id, {type, sourcePath, targetPath}>
+            await interaction.editReply({ content: 'ワークショップアイテムの情報を抽出し、必要なアイテムを準備中 (ダウンロード含む)...', ephemeral: false })
+            const requiredItems = extractWorkshopIdsAndTypes(parsedXmlData) // Map<id, {type, sourcePath, targetPath}>
 
-            //// prepareWorkshopItems は interaction を使って followUp で結果を報告する
-            //const preparationResult = await prepareWorkshopItems(requiredItems, interaction) // { allReady: boolean, results: [...] }
+            // prepareWorkshopItems は interaction を使って followUp で結果を報告する
+            const preparationResult = await prepareWorkshopItems(requiredItems, interaction) // { allReady: boolean, results: [...] }
 
-            //if (!preparationResult.allReady) {
-            //    console.error(`[ERROR] Failed to prepare required workshop items for ${configName}.`)
-            //    // prepareWorkshopItems が既に失敗メッセージを FollowUp している
-            //    await interaction.editReply({ content: '❌ 必要なワークショップアイテムの準備に失敗しました。上記の詳細を確認してください。構成の作成を中止します。', ephemeral: false })
-            //    return // アイテム準備失敗
-            //}
-            //console.log(`[INFO] All required workshop items are ready for ${configName}.`)
+            if (!preparationResult.allReady) {
+                console.error(`[ERROR] Failed to prepare required workshop items for ${configName}.`)
+                // prepareWorkshopItems が既に失敗メッセージを FollowUp している
+                await interaction.editReply({ content: '❌ 必要なワークショップアイテムの準備に失敗しました。上記の詳細を確認してください。構成の作成を中止します。', ephemeral: false })
+                return // アイテム準備失敗
+            }
+            console.log(`[INFO] All required workshop items are ready for ${configName}.`)
 
 
             // --- ステップ 4: サーバー構成作成 ---
             // ワークショップアイテム準備中のメッセージを削除
-            //try {
-            //    if (progressMessage) {
-            //        await progressMessage.delete()
-            //    }
-            //} catch (deleteError) {
-            //    console.error(`[Cleanup] Failed to delete progress message:`, deleteError)
-            //}
-//
-            await interaction.editReply({ content: `サーバー構成 **${configName}** を作成中...`, ephemeral: false })
+            try {
+                if (progressMessage) {
+                    await progressMessage.delete()
+                }
+            } catch (deleteError) {
+                console.error(`[Cleanup] Failed to delete progress message:`, deleteError)
+            }
+
+            await interaction.editReply({ content: `ワークショップアイテム準備完了。サーバー構成 **${configName}** を作成中...`, ephemeral: false })
 
             // 4b. 構成ディレクトリ作成
             newConfigPath = utils.getConfigPath(configName)
@@ -129,42 +130,42 @@ module.exports = {
 
             // 4c. シンボリックリンク作成 (プレイリスト用) - ディレクトリ作成後、XML保存前
             // ★ prepareWorkshopItems の結果 (配列) から Map を再構築して渡す
-            //const preparedItemsMap = new Map()
-            //preparationResult.results.forEach(r => {
-            //    const originalInfo = requiredItems.get(r.id) // 元の情報を取得
-            //    if (originalInfo) {
-            //    preparedItemsMap.set(r.id, {
-            //        success: r.success,
-            //        targetPath: r.targetPath,
-            //        type: originalInfo.type // type 情報を追加
-            //    })
-            //    }
-            //})
+             const preparedItemsMap = new Map()
+             preparationResult.results.forEach(r => {
+                 const originalInfo = requiredItems.get(r.id) // 元の情報を取得
+                 if (originalInfo) {
+                    preparedItemsMap.set(r.id, {
+                        success: r.success,
+                        targetPath: r.targetPath,
+                        type: originalInfo.type // type 情報を追加
+                    })
+                 }
+             })
 
-            // createPlaylistSymlinks は interaction を使って followUp で結果を報告する
-            //const symlinkSuccess = await createPlaylistSymlinks(configName, preparedItemsMap, interaction)
-            //if (!symlinkSuccess) {
-            //    console.error(`[ERROR] Failed to create symbolic links for ${configName}.`)
-            //    // createPlaylistSymlinks が既に失敗メッセージを FollowUp している
-            //    await interaction.editReply({ content: `❌ ワークショッププレイリストのシンボリックリンク作成に失敗しました。上記の詳細を確認してください。構成の作成を中止します。`, ephemeral: false })
-            //    // ★ 作成したディレクトリを削除
-            //    console.log(`[Cleanup] Removing directory ${newConfigPath} due to symlink error.`)
-            //    await fs.rm(newConfigPath, { recursive: true, force: true }).catch(err => console.error(`[Cleanup Error] Failed to remove directory ${newConfigPath}: ${err.message}`))
-            //    return // シンボリックリンク失敗
-            //}
-            //console.log(`[INFO] Symbolic links created successfully for ${configName}.`)
+             // createPlaylistSymlinks は interaction を使って followUp で結果を報告する
+             const symlinkSuccess = await createPlaylistSymlinks(configName, preparedItemsMap, interaction)
+             if (!symlinkSuccess) {
+                 console.error(`[ERROR] Failed to create symbolic links for ${configName}.`)
+                 // createPlaylistSymlinks が既に失敗メッセージを FollowUp している
+                 await interaction.editReply({ content: `❌ ワークショッププレイリストのシンボリックリンク作成に失敗しました。上記の詳細を確認してください。構成の作成を中止します。`, ephemeral: false })
+                 // ★ 作成したディレクトリを削除
+                 console.log(`[Cleanup] Removing directory ${newConfigPath} due to symlink error.`)
+                 await fs.rm(newConfigPath, { recursive: true, force: true }).catch(err => console.error(`[Cleanup Error] Failed to remove directory ${newConfigPath}: ${err.message}`))
+                 return // シンボリックリンク失敗
+             }
+             console.log(`[INFO] Symbolic links created successfully for ${configName}.`)
 
 
             // 4d. XML更新と保存 (ポート番号)
             log('DEBUG', '[カスタム作成] ステップ4d: server_config.xml 保存 (ポート=0)...', { interaction, thread: logThread });
             try {
-                const serverDataNode = parsedXmlData.server_data;
-                if (!serverDataNode.$) serverDataNode.$ = {};
-                serverDataNode.$.port = "0"; // ポートを "0" に設定
-                const updatedXml = builder.buildObject(parsedXmlData);
-                const configFilePath = path.join(newConfigPath, 'server_config.xml');
-                await fs.writeFile(configFilePath, updatedXml);
-                log('INFO', `[カスタム作成] ステップ4d完了: server_config.xml をポート 0 で保存。`, { interaction, thread: logThread });
+                 const serverDataNode = parsedXmlData.server_data;
+                 if (!serverDataNode.$) serverDataNode.$ = {};
+                 serverDataNode.$.port = "0"; // ★ ポートを "0" に設定
+                 const updatedXml = builder.buildObject(parsedXmlData);
+                 const configFilePath = path.join(newConfigPath, 'server_config.xml');
+                 await fs.writeFile(configFilePath, updatedXml);
+                 log('INFO', `[カスタム作成] ステップ4d完了: server_config.xml をポート 0 で保存。`, { interaction, thread: logThread });
             } catch (xmlWriteError) {
                  console.error(`[ERROR] Failed to write server_config.xml for ${configName}:`, xmlWriteError)
                  await interaction.editReply({ content: `設定ファイル(server_config.xml)の保存中にエラーが発生しました: ${xmlWriteError.message}`, ephemeral: false })
@@ -179,12 +180,12 @@ module.exports = {
                 await utils.writeMetadata(configName, interaction.user.id)
                 console.log(`[INFO] Saved metadata.xml for ${configName}.`)
             } catch (metaWriteError) {
-                console.error(`[ERROR] Failed to write metadata.xml for ${configName}:`, metaWriteError)
-                // メタデータ書き込み失敗は警告に留める
-                await interaction.followUp({
-                    content: `⚠️ ${messages.get('ERROR_METADATA_WRITE', { configName })}\n構成とワークショップアイテムは準備できましたが、管理情報の保存に失敗しました。`,
-                    ephemeral: false
-                })
+                 console.error(`[ERROR] Failed to write metadata.xml for ${configName}:`, metaWriteError)
+                 // メタデータ書き込み失敗は警告に留める
+                 await interaction.followUp({
+                     content: `⚠️ ${messages.get('ERROR_METADATA_WRITE', { configName })}\n構成とワークショップアイテムは準備できましたが、管理情報の保存に失敗しました。`,
+                     ephemeral: false
+                 })
             }
 
             // --- ステップ 5: 完了報告 ---

@@ -88,20 +88,24 @@ function createToken(length = 32) {
  * @param {string} creatorId トークン作成者のDiscordユーザーID
  * @returns {Promise<{success: boolean, token: string|null, error: string|null}>} 保存結果。成功時はトークンも返す。
  */
-async function saveToken(creatorId) {
+async function saveToken(creatorId, serverName) {
     try {
+        if (!serverName || serverName.length === 0 || serverName.length > 50) { // 名前長チェックなど
+            return { success: false, token: null, error: '物理サーバー名は1文字以上50文字以下で指定してください。' };
+       }
         const newToken = createToken();
         const tokens = await loadTokens();
         const tokenData = {
             token: newToken,
             creatorId: creatorId,
+            name: serverName,
             connectionCount: 0,
             lastConnectedAt: null,
             createdAt: new Date().toISOString(),
         };
         tokens.push(tokenData);
         await saveTokensToFile(tokens);
-        log('INFO', `[トークン管理] 新しいトークンが生成・保存されました: ${newToken.substring(0,8)}... (作成者: ${creatorId})`);
+        log('INFO', `[トークン管理] 新トークン生成・保存: ...${newToken.slice(-4)} (作成者: ${creatorId}, サーバー名: ${serverName})`);
         return { success: true, token: newToken, error: null };
     } catch (error) {
         log('ERROR', '[トークン管理] トークンの保存中にエラーが発生しました。', { error: error });

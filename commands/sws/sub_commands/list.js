@@ -8,6 +8,7 @@ const config = require('./utility/registry') // 設定情報をインポート
 const messages = require('./utility/messages') // メッセージ管理モジュールをインポート
 const chalk = require('chalk') // ログの色分け用ライブラリ
 
+const MAX_SERVER_COUNT = config.maxServerCount // サーバーの最大数
 const configBaseDir = config.configBasePath // 構成が保存されるベースディレクトリ
 
 // デバッグモードの設定
@@ -93,7 +94,7 @@ module.exports = {
 
                 // serverInstances Map からサーバーの実行状態を確認
                 const instanceState = serverInstances.get(configName)
-                if (instanceState?.isRun) {
+                if (instanceState?.status === 'running') {
                     status = '起動中' // isRun が true なら起動中
                 } else {
                     status = '停止中' // isRun が false または存在しない場合は停止中
@@ -123,9 +124,8 @@ module.exports = {
             if (configFields.length > 25) { // 25件を超えている場合
                 embed.setDescription(messages.get('INFO_LIST_LIMIT', { count: configFields.length }))
             } else {
-                const portRange = config.maxPort - config.minPort
                 const serverCount = configFields.length
-                embed.setDescription(`あと\`${portRange - serverCount}/${portRange}\`個サーバーを作成できます。`)
+                embed.setDescription(`あと\`${MAX_SERVER_COUNT - serverCount}/${MAX_SERVER_COUNT}\`個サーバーを作成できます。`)
             }
 
             // 最終的なEmbedを返信する

@@ -18,7 +18,7 @@ function setServerInstances(map) {
  * @param {string} clientId - 現在の接続クライアントID
  * @param {string[]} goSideRunningServers - Goクライアントから送られてきた起動中サーバー名のリスト
  */
-async function synchronizeServerState(token, clientId, goSideRunningServers) {
+async function synchronizeServerState(token, clientId, goSideRunningServers, maxServersFromGo) {
     const tokenEnding = `...${token.slice(-4)}`;
     if (!serverInstancesRef) {
         log('ERROR', '[同期] serverInstances Map が利用できません。同期スキップ。', { tokenEnding, clientId });
@@ -33,6 +33,17 @@ async function synchronizeServerState(token, clientId, goSideRunningServers) {
     const { ip, creatorId } = clientInfo;
 
     log('INFO', `[同期] 状態同期開始: Token=${tokenEnding}, ClientID=${clientId}。Go側リスト: [${goSideRunningServers.join(', ')}]`, { tokenEnding, clientId });
+
+      // ★ Stage 8: クライアント情報に maxServers を保存
+      if (typeof maxServersFromGo === 'number' && maxServersFromGo >= 0) {
+        clientInfo.maxServers = maxServersFromGo;
+        log('DEBUG', `[同期] ClientID ${clientId} の最大サーバー数を ${maxServersFromGo} に設定しました。`);
+    } else {
+        clientInfo.maxServers = null; // 不明な場合は null
+        log('WARN', `[同期] Goクライアントから有効な最大サーバー数が送られてきませんでした。`);
+    }
+    // 更新された clientInfo を clientManager に反映 (Mapは参照型なので不要かもしれないが念のため)
+    clientManager.addClient(clientInfo);
 
     // このトークンで起動中とBotが認識しているサーバーリストを取得
     const botSideRunningServersMap = new Map();

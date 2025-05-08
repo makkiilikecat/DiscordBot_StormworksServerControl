@@ -1,7 +1,6 @@
 const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js')
 const presets = require('./utility/presets')
 const utils = require('./utility/utils')
-const { prepareWorkshopItems, createPlaylistSymlinks } = require('./utility/workshop_downloader')
 const xml2js = require('xml2js')
 const fs = require('fs').promises;
 const path = require('path')
@@ -198,51 +197,40 @@ module.exports = {
                                 })
                             }
                         })
-                        log('INFO', `ステップ2完了: ${requiredItems.length} 個のユニークなワークショップアイテムが必要です。`, { interaction, data: { count: requiredItems.length }, thread: logThread })
+                        log('INFO', `ステップ2完了: ${requiredItems.length} 個のユニークなワークショップアイテムを検出。`, { interaction, data: { count: requiredItems.length }, thread: logThread })
 
                         // --- ステップ 3: ワークショップアイテム準備 ---
-                        log('DEBUG', `ステップ3: ${requiredItems.length}個のワークショップアイテム準備を開始します。`, { interaction, thread: logThread })
-                        // editReply は update 後は使えないので followUp を使うか、update の content を更新する
-                        // ここでは followUp を使う
-                        const progressMsg = await interaction.followUp({ content: `⏳ 構成 **${configName}** を作成中です... (${requiredItems.length}個のワークショップアイテム準備中)`, ephemeral: false })
-                        log('DEBUG', 'ワークショップ準備中の進捗メッセージを送信しました。', { interaction, thread: logThread })
+                        //log('DEBUG', `ステップ3: ${requiredItems.length}個のワークショップアイテム準備を開始します。`, { interaction, thread: logThread })
+                        //// editReply は update 後は使えないので followUp を使うか、update の content を更新する
+                        //// ここでは followUp を使う
+                        //const progressMsg = await interaction.followUp({ content: `⏳ 構成 **${configName}** を作成中です... (${requiredItems.length}個のワークショップアイテム準備中)`, //ephemeral: false })
+                        //log('DEBUG', 'ワークショップ準備中の進捗メッセージを送信しました。', { interaction, thread: logThread })
 
-                        const requiredItemsMap = new Map()
-                        requiredItems.forEach(item => {
-                            requiredItemsMap.set(item.id, {
-                                type: item.type,
-                                sourcePath: item.sourcePath,
-                                targetPath: path.join(config.workshopContentPath, item.id)
-                            })
-                        })
-                        // prepareWorkshopItems は内部で interaction.followUp を使う
-                        const preparationResult = await prepareWorkshopItems(requiredItemsMap, interaction)
-                        if (!preparationResult.allReady) {
-                            log('ERROR', 'ワークショップアイテムの準備に失敗しました。', { interaction, data: preparationResult.results, thread: logThread })
-                            // prepareWorkshopItems が失敗メッセージを followUp しているはず
-                            // 進捗メッセージを編集して失敗を伝える
-                            await progressMsg.edit({ content: `❌ ワークショップアイテムの準備に失敗しました。詳細はログチャンネルを確認してください。` })
-                            return
-                        }
-                        log('INFO', 'ステップ3完了: 全てのワークショップアイテムの準備が完了しました。', { interaction, thread: logThread })
-                        // 成功したら進捗メッセージを削除
-                        await progressMsg.delete().catch(e => log('WARN', '進捗メッセージの削除に失敗', { error: e, thread: logThread }))
+                        //const requiredItemsMap = new Map()
+                        //requiredItems.forEach(item => {
+                        //    requiredItemsMap.set(item.id, {
+                        //        type: item.type,
+                        //        sourcePath: item.sourcePath,
+                        //        targetPath: path.join(config.workshopContentPath, item.id)
+                        //    })
+                        //})
+                        //// prepareWorkshopItems は内部で interaction.followUp を使う
+                        //const preparationResult = await prepareWorkshopItems(requiredItemsMap, interaction)
+                        //if (!preparationResult.allReady) {
+                        //    log('ERROR', 'ワークショップアイテムの準備に失敗しました。', { interaction, data: preparationResult.results, thread: logThread })
+                        //    // prepareWorkshopItems が失敗メッセージを followUp しているはず
+                        //    // 進捗メッセージを編集して失敗を伝える
+                        //    await progressMsg.edit({ content: `❌ ワークショップアイテムの準備に失敗しました。詳細はログチャンネルを確認してください。` })
+                        //    return
+                        //}
+                        //log('INFO', 'ステップ3完了: 全てのワークショップアイテムの準備が完了しました。', { interaction, thread: logThread })
+                        //// 成功したら進捗メッセージを削除
+                        //await progressMsg.delete().catch(e => log('WARN', '進捗メッセージの削除に失敗', { error: e, thread: logThread }))
 
                         // --- ステップ 4: サーバー構成作成 ---
                         log('DEBUG', 'ステップ4: サーバー構成の作成を開始します。', { interaction, thread: logThread })
                         // 元の update されたメッセージを編集して次のステップを伝える
                         await interaction.editReply({ content: `⏳ 構成 **${configName}** を作成中です... (構成ファイル生成中)` })
-
-                        // 4a. ポート割り当て
-                        log('DEBUG', 'ステップ4a: 利用可能なポートを探しています...', { interaction, thread: logThread })
-                        const usedPorts = await utils.getUsedPorts()
-                        const availablePort = utils.findAvailablePort(config.minPort, config.maxPort, usedPorts)
-                        if (availablePort === null) {
-                            log('ERROR', '利用可能なポートが見つかりません。', { interaction, data: { minPort: config.minPort, maxPort: config.maxPort, usedPorts }, thread: logThread })
-                            await interaction.followUp({ content: messages.get('ERROR_PORT_NOT_AVAILABLE', { minPort: config.minPort, maxPort: config.maxPort }), ephemeral: false })
-                            return
-                        }
-                        log('INFO', `ステップ4a完了: ポート ${availablePort} を割り当てます。`, { interaction, thread: logThread })
 
                         // 4b. 構成ディレクトリ作成
                         newConfigPath = utils.getConfigPath(configName)
@@ -257,36 +245,36 @@ module.exports = {
                         log('INFO', `ステップ4b完了: 構成ディレクトリを作成しました。`, { interaction, thread: logThread })
 
                         // 4c. シンボリックリンク作成
-                        log('DEBUG', 'ステップ4c: シンボリックリンクを作成します。', { interaction, thread: logThread })
-                        const preparedItemsForSymlink = new Map()
-                         preparationResult.results.forEach(r => {
-                             const originalInfo = requiredItemsMap.get(r.id)
-                             if (originalInfo) {
-                                 preparedItemsForSymlink.set(r.id, {
-                                     success: r.success,
-                                     targetPath: r.targetPath,
-                                     type: originalInfo.type
-                                 })
-                             } else {
-                                 log('WARN', `シンボリックリンク用Map構築中にID ${r.id} の元情報が見つかりません。`, { interaction, thread: logThread })
-                             }
-                         })
-                        // createPlaylistSymlinks は内部で interaction.followUp を使う
-                        const symlinkSuccess = await createPlaylistSymlinks(configName, preparedItemsForSymlink, interaction)
-                        if (!symlinkSuccess) {
-                            log('ERROR', 'シンボリックリンクの作成に失敗しました。ディレクトリを削除します。', { interaction, thread: logThread })
-                            // createPlaylistSymlinks が失敗メッセージを followUp しているはず
-                            await interaction.editReply({ content: `❌ シンボリックリンクの作成に失敗しました。詳細はログチャンネルを確認してください。` })
-                            await fs.rm(newConfigPath, { recursive: true, force: true }).catch(rmErr => log('ERROR', `構成ディレクトリ "${newConfigPath}" の削除に失敗。`, { interaction, error: rmErr, thread: logThread }))
-                            return
-                        }
-                        log('INFO', 'ステップ4c完了: シンボリックリンクを作成しました。', { interaction, thread: logThread })
+                        //log('DEBUG', 'ステップ4c: シンボリックリンクを作成します。', { interaction, thread: logThread })
+                        //const preparedItemsForSymlink = new Map()
+                        //preparationResult.results.forEach(r => {
+                        //    const originalInfo = requiredItemsMap.get(r.id)
+                        //    if (originalInfo) {
+                        //        preparedItemsForSymlink.set(r.id, {
+                        //            success: r.success,
+                        //            targetPath: r.targetPath,
+                        //            type: originalInfo.type
+                        //        })
+                        //    } else {
+                        //        log('WARN', `シンボリックリンク用Map構築中にID ${r.id} の元情報が見つかりません。`, { interaction, thread: logThread })
+                        //    }
+                        //})
+                        //// createPlaylistSymlinks は内部で interaction.followUp を使う
+                        //const symlinkSuccess = await createPlaylistSymlinks(configName, preparedItemsForSymlink, interaction)
+                        //if (!symlinkSuccess) {
+                        //    log('ERROR', 'シンボリックリンクの作成に失敗しました。ディレクトリを削除します。', { interaction, thread: logThread })
+                        //    // createPlaylistSymlinks が失敗メッセージを followUp しているはず
+                        //    await interaction.editReply({ content: `❌ シンボリックリンクの作成に失敗しました。詳細はログチャンネルを確認してください。` })
+                        //    await fs.rm(newConfigPath, { recursive: true, force: true }).catch(rmErr => log('ERROR', `構成ディレクトリ "${newConfigPath}" の削除に失敗。`, { interaction, error: rmErr, thread: logThread }))
+                        //    return
+                        //}
+                        //log('INFO', 'ステップ4c完了: シンボリックリンクを作成しました。', { interaction, thread: logThread })
 
                         // 4d. server_config.xml 生成・保存
-                        log('DEBUG', `ステップ4d: server_config.xml を生成・保存します。ポート: ${availablePort}`, { interaction, thread: logThread })
+                        log('DEBUG', `ステップ4d: server_config.xml を生成・保存します。`, { interaction, thread: logThread })
                         const serverConfigObject = {
                             server_data: {
-                                $: { ...worldSettings, port: String(availablePort) },
+                                $: { ...worldSettings },
                                 admins: { id: [] }, authorized: { id: [] }, blacklist: { id: [] }, whitelist: { id: [] },
                                 playlists: { path: [] }, mods: { path: [], published_id: [] }
                             }
@@ -297,7 +285,7 @@ module.exports = {
                                 preset.items.forEach(item => {
                                     const workshopMatch = item.value.match(/workshop\/(\d+)/)
                                     if (workshopMatch) {
-                                        serverConfigObject.server_data.playlists.path.push({ $: { path: `rom/data/workshop_missions/${workshopMatch[1]}` } })
+                                        serverConfigObject.server_data.playlists.path.push({ $: { path: `${workshopMatch[1]}` } })
                                     } else if (item.value.startsWith('rom/')) {
                                         serverConfigObject.server_data.playlists.path.push({ $: { path: item.value } })
                                     } else {
@@ -314,7 +302,7 @@ module.exports = {
                                     if (workshopMatch) {
                                         serverConfigObject.server_data.mods.published_id.push({ $: { value: workshopMatch[1] } })
                                     } else {
-                                         log('WARN', `不明な形式のModパス（published_id期待）: ${item.value}`, { interaction, thread: logThread })
+                                        log('WARN', `不明な形式のModパス（published_id期待）: ${item.value}`, { interaction, thread: logThread })
                                     }
                                 })
                             }
@@ -333,9 +321,9 @@ module.exports = {
                         }
 
                         // 4e. メタデータ保存
-                        log('DEBUG', `ステップ4e: メタデータ (metadata.xml) を保存します。作成者ID: ${interaction.user.id}, ポート: ${availablePort}`, { interaction, thread: logThread })
+                        log('DEBUG', `ステップ4e: メタデータ (metadata.xml) を保存します。作成者ID: ${interaction.user.id}`, { interaction, thread: logThread })
                         try {
-                            await utils.writeMetadata(configName, interaction.user.id, availablePort)
+                            await utils.writeMetadata(configName, interaction.user.id)
                             log('INFO', 'ステップ4e完了: metadata.xml を保存しました。', { interaction, thread: logThread })
                         } catch (metaWriteError) {
                             if (metaWriteError.message.includes('既に存在します')) {

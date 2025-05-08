@@ -20,6 +20,8 @@ const { log } = require('../../../../../utility/text_chat_logger');
  * pingIntervalId: NodeJS.Timeout | null,
  * pongTimeoutId: NodeJS.Timeout | null,
  * synced: boolean
+ * connectedAt: string,   // 接続時刻 (ISO 8601)
+ * maxServers: number | null // ★ Stage 8: 同時起動可能な最大サーバー数 (Goから受信)
  * }
  */
 const wsClients = new Map();
@@ -33,6 +35,9 @@ function addClient(clientInfo) {
         log('ERROR', '[ClientManager] 無効なクライアント情報を追加しようとしました。', { data: clientInfo });
         return;
     }
+    //if (!clientInfo.hasOwnProperty('maxServers')) {
+    //    clientInfo.maxServers = ;
+    //}
     if (wsClients.has(clientInfo.clientId)) {
         log('WARN', `[ClientManager] 既に存在する ClientID ${clientInfo.clientId} を追加しようとしました。上書きします。`, { data: clientInfo });
     }
@@ -120,12 +125,14 @@ function getConnectedClients() {
     // 必要に応じて、ws オブジェクトなど外部に渡すべきでない情報を除外する処理を追加
     return getAllClients().map(clientInfo => ({
         clientId: clientInfo.clientId,
-        physicalServerId: clientInfo.physicalServerId,
         token: clientInfo.token,
+        physicalServerName: clientInfo.physicalServerName || '名称未設定', 
         ip: clientInfo.ip,
         creatorId: clientInfo.creatorId,
         ping: clientInfo.ping,
         synced: clientInfo.synced, // 同期状態も渡す
+        connectedAt: clientInfo.connectedAt, 
+        maxServers: clientInfo.maxServers,
         // ws, lastPingTime, isAlive, intervalId などは通常不要
     }));
 }

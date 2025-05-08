@@ -134,7 +134,7 @@ function validateConfigFormat(config) {
     }
 
     // 必須フィールドの検証
-    const requiredFields = ['name', 'port', 'max_players']
+    const requiredFields = ['name', 'max_players']
     for (const field of requiredFields) {
         if (!(field in config)) {
             console.error(chalk.red(`[ERROR] Missing required field: ${field}`))
@@ -155,7 +155,7 @@ module.exports = Object.freeze({
     serverData: {
         // 許可される属性とその定義
         attributes: {
-            port: { type: 'integer', required: true, range: [1024, 65535], autoAssign: true },
+            port: { type: 'integer', required: false, range: [0, 65535] },
             name: { type: 'string', required: true, allowEmpty: false },
             seed: { type: 'integer', required: true },
             save_name: { type: 'string', required: true, allowEmpty: false },

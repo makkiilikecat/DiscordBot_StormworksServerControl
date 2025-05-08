@@ -18,168 +18,187 @@ if (DEBUG_MODE) {
 
 module.exports = {
     async execute(interaction, serverInstances) {
-        const configName = interaction.options.getString('name')
+        // ★ ボタンインタラクションかどうかを判定
+        const isButtonInteraction = interaction.isButton();
+        let configName;
 
-        if (DEBUG_MODE) {
+        if (isButtonInteraction) {
+            // ボタンインタラクションの場合、customIdからconfigNameを抽出する
+            // confirm_remove_xxxx の形式を想定
+            if (interaction.customId.startsWith('confirm_remove_')) {
+                configName = interaction.customId.substring('confirm_remove_'.length);
+            }
+            // cancel_remove の場合は configName は不要 (あるいは別の方法で取得)
+        } else {
+            // スラッシュコマンドの場合
+            configName = interaction.options.getString('name');
+        }
+
+        // configName が特定できない場合（主にキャンセルボタン以外で問題が発生した場合）
+        // ただし、キャンセルボタンのロジックはこの後にあるため、ここでは主に初期のコマンド実行時を想定
+        if (!isButtonInteraction && !configName) {
+            log('ERROR', 'removeコマンドでconfigNameが取得できませんでした。', { interaction });
+            await interaction.reply({ content: 'コマンドの実行に必要な情報が不足しています。', ephemeral: true });
+            return;
+        }
+
+
+        if (DEBUG_MODE && !isButtonInteraction) { // ボタンの時はconfigNameがまだ取れないことがある
             console.log(chalk.blue(`[DEBUG] Attempting to remove server configuration: ${configName}`))
         }
 
-        try {
-            // 1. 構成名の妥当性をチェック (念のため)
-            if (!utils.isValidConfigName(configName)) {
-                await interaction.reply({
-                    content: messages.get('ERROR_CONFIG_NAME_INVALID', { invalidName: configName }),
-                    ephemeral: false
-                })
-                return
-            }
-
-            // 2. 構成が存在するかチェック
-            const configExists = await utils.checkConfigExists(configName)
-            if (!configExists) {
-                await interaction.reply({
-                    content: messages.get('ERROR_CONFIG_NOT_FOUND', { configName }),
-                    ephemeral: false
-                })
-                return
-            }
-
-            // 3. サーバーが起動中でないかチェック
-            const serverState = serverInstances.get(configName)
-            if (serverState?.isRun) {
-                await interaction.reply({
-                    content: messages.get('ERROR_CONFIG_RUNNING', { configName }),
-                    ephemeral: false
-                })
-                return
-            }
-
-            // 4. 削除権限を確認 (管理者 または 構成の作成者)
-            let creatorId = null
-            let creatorTag = '不明'
+        // ★ スラッシュコマンドの初期実行時のみ実行する処理
+        if (!isButtonInteraction) {
             try {
-                const metadata = await utils.readMetadata(configName)
-                creatorId = metadata?.creator_id?.[0]
-                if (creatorId) {
-                    try {
-                        const creator = await interaction.client.users.fetch(creatorId)
-                        creatorTag = creator.tag;
-                    } catch { /* ignore fetch error */ }
+                // 1. 構成名の妥当性をチェック (念のため)
+                if (!utils.isValidConfigName(configName)) {
+                    await interaction.reply({
+                        content: messages.get('ERROR_CONFIG_NAME_INVALID', { invalidName: configName }),
+                        ephemeral: false
+                    });
+                    return;
                 }
-            } catch (metaError) {
-                console.warn(`Could not read metadata for permission check (${configName}): ${metaError.message}`)
-                // メタデータ読めなくても管理者は削除可能
-            }
 
-            const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)
-            const isCreator = creatorId && interaction.user.id === creatorId;
+                // 2. 構成が存在するかチェック
+                const configExists = await utils.checkConfigExists(configName);
+                if (!configExists) {
+                    await interaction.reply({
+                        content: messages.get('ERROR_CONFIG_NOT_FOUND', { configName }),
+                        ephemeral: false
+                    });
+                    return;
+                }
 
-            if (!isAdmin && !isCreator) {
+                // 3. サーバーが起動中でないかチェック
+                const serverState = serverInstances.get(configName);
+                if (serverState?.isRun) {
+                    await interaction.reply({
+                        content: messages.get('ERROR_CONFIG_RUNNING', { configName }),
+                        ephemeral: false
+                    });
+                    return;
+                }
+
+                // 4. 削除権限を確認 (管理者 または 構成の作成者)
+                let creatorId = null;
+                let creatorTag = '不明';
+                try {
+                    const metadata = await utils.readMetadata(configName);
+                    creatorId = metadata?.creator_id?.[0];
+                    if (creatorId) {
+                        try {
+                            const creator = await interaction.client.users.fetch(creatorId);
+                            creatorTag = creator.tag;
+                        } catch { /* ignore fetch error */ }
+                    }
+                } catch (metaError) {
+                    console.warn(`Could not read metadata for permission check (${configName}): ${metaError.message}`);
+                }
+
+                const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
+                const isCreator = creatorId && interaction.user.id === creatorId;
+
+                if (!isAdmin && !isCreator) {
+                    await interaction.reply({
+                        content: messages.get('ERROR_NO_PERMISSION_REMOVE', { configName, creatorTag: creatorTag || '取得不可' }),
+                        ephemeral: false
+                    });
+                    return;
+                }
+
+                // 5. 削除確認のボタンを表示
+                const confirmButton = new ButtonBuilder()
+                    .setCustomId(`confirm_remove_${configName}`)
+                    .setLabel(messages.Buttons.CONFIRM_REMOVE)
+                    .setStyle(ButtonStyle.Danger);
+
+                const cancelButton = new ButtonBuilder()
+                    .setCustomId(`cancel_remove_${configName}`) // ★ キャンセルボタンにもconfigNameを含める
+                    .setLabel(messages.Buttons.CANCEL_REMOVE)
+                    .setStyle(ButtonStyle.Secondary);
+
+                const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+
                 await interaction.reply({
-                    content: messages.get('ERROR_NO_PERMISSION_REMOVE', { configName, creatorTag: creatorTag || '取得不可' }),
-                    ephemeral: false
-                })
-                return
+                    content: messages.get('INFO_REMOVE_CONFIRM', { configName }),
+                    components: [row],
+                    ephemeral: false,
+                    fetchReply: true,
+                });
+                return; // ボタンの応答は別のインタラクションとして処理されるため、ここで一旦終了
+
+            } catch (error) {
+                console.error(`Error during initial config removal process (${configName}):`, error);
+                const errorMessage = messages.get('ERROR_COMMAND_INTERNAL');
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.editReply({ content: errorMessage, components: [], ephemeral: false });
+                } else {
+                    await interaction.reply({ content: errorMessage, components: [], ephemeral: false });
+                }
+                return;
             }
+        }
 
-            // 5. 削除確認のボタンを表示
-            const confirmButton = new ButtonBuilder()
-                .setCustomId(`confirm_remove_${configName}`) // customIdに構成名を含めて一意にする
-                .setLabel(messages.Buttons.CONFIRM_REMOVE) // messages.jsからラベル取得
-                .setStyle(ButtonStyle.Danger)
-
-            const cancelButton = new ButtonBuilder()
-                .setCustomId('cancel_remove')
-                .setLabel(messages.Buttons.CANCEL) // messages.jsからラベル取得
-                .setStyle(ButtonStyle.Secondary)
-
-            const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton)
-
-            // 確認メッセージを送信 (ephemeral: false で本人にのみ表示)
-            const reply = await interaction.reply({
-                content: messages.get('INFO_REMOVE_CONFIRM', { configName }),
-                components: [row],
-                ephemeral: false,
-                fetchReply: true, // メッセージオブジェクトを取得するため
-            })
-
-            // ボタンの応答を待つフィルター (押したユーザーがコマンド実行者であり、対象メッセージのボタンであること)
-            const collectorFilter = i => i.user.id === interaction.user.id && i.message.id === reply.id;
-
+        // ★ ボタンインタラクションの処理
+        if (isButtonInteraction) {
             try {
-                // ボタン応答を60秒待つ
-                const confirmation = await reply.awaitMessageComponent({ filter: collectorFilter, time: 60_000 })
+                // ボタンインタラクションの deferUpdate は、ボタンを押したユーザーへの応答として適切
+                await interaction.deferUpdate(); // interaction はこの場合 ButtonInteraction
 
-                // interactionの更新（ボタンのローディング解除）
-                await confirmation.deferUpdate()
-
-                if (confirmation.customId === `confirm_remove_${configName}`) {
-                    // 「はい、削除します」が押された場合
-                    await interaction.editReply({
+                if (interaction.customId.startsWith('confirm_remove_')) {
+                    // configName はこのスコープの先頭で customId から取得済み
+                    await interaction.editReply({ // ButtonInteraction に対して editReply
                         content: messages.get('INFO_REMOVE_STARTING', { configName }),
-                        components: [] // ボタンを消す
-                    })
+                        components: []
+                    });
 
-                    // 6. 構成ディレクトリを再帰的に削除
-                    const configPath = utils.getConfigPath(configName)
+                    const configPath = utils.getConfigPath(configName);
                     try {
-                        await fs.rm(configPath, { recursive: true, force: true })
+                        await fs.rm(configPath, { recursive: true, force: true });
                         if (DEBUG_MODE) {
-                            console.log(chalk.green(`[DEBUG] Successfully removed configuration: ${configName}`))
+                            console.log(chalk.green(`[DEBUG] Successfully removed configuration: ${configName}`));
                         }
                         await interaction.editReply({
                             content: messages.get('SUCCESS_REMOVE', { configName }),
                             components: []
-                        })
-                        // 必要であれば公開チャンネルに削除完了を通知
-                        await interaction.followUp({ content: `${interaction.user.tag} が構成 "${configName}" を削除しました。`, ephemeral: false })
-                    } catch(removeError) {
-                        console.error(chalk.red(`Failed to remove directory ${configPath}:`), removeError)
+                        });
+                        // followUp は元のインタラクションではなく、新しいメッセージとして送信される
+                        await interaction.followUp({ content: `${interaction.user.tag} が構成 "${configName}" を削除しました。`, ephemeral: false });
+                    } catch (removeError) {
+                        console.error(chalk.red(`Failed to remove directory ${configPath}:`), removeError);
                         await interaction.editReply({
                             content: messages.get('ERROR_DIRECTORY_REMOVE', { configName }),
                             components: []
-                        })
+                        });
                     }
-
-                } else if (confirmation.customId === 'cancel_remove') {
-                    // 「キャンセル」が押された場合
+                } else if (interaction.customId.startsWith('cancel_remove_')) {
+                    // configName は customId から取得可能だが、このメッセージでは使わない
                     await interaction.editReply({
                         content: messages.get('INFO_REMOVE_CANCELLED'),
                         components: []
-                    })
+                    });
                 }
-
             } catch (e) {
-                // awaitMessageComponent がタイムアウトした場合 (InteractionCollectorError)
-                if (e.code === 'InteractionCollectorError') {
-                    await interaction.editReply({
-                        content: messages.get('INFO_REMOVE_TIMEOUT'),
-                        components: [] // タイムアウト後もボタンは消す
-                    })
-                } else {
-                    // その他の予期せぬエラー
-                    console.error('Error awaiting button confirmation:', e)
-                    await interaction.editReply({
-                        content: messages.get('ERROR_GENERIC'), // 汎用エラーメッセージ
-                        components: []
-                    })
+                console.error('Error processing button interaction for remove:', e);
+                // ボタンインタラクションの応答が既にタイムアウトなどで失敗している場合がある
+                // この時点で editReply が失敗する可能性も考慮
+                try {
+                    if (e.code === 'InteractionCollectorError' || e.code === 10062 /* Unknown Interaction */) {
+                         // タイムアウトや不明なインタラクションの場合は、元のメッセージを編集しようとせず、
+                         // 可能であれば新しいメッセージで通知するか、ログに記録するだけにする。
+                         // ここでは、元のメッセージのボタンを消す試みはしない。
+                        log('WARN', `ボタン応答処理中にエラーまたはタイムアウトが発生しました (remove): ${e.message}`, { customId: interaction.customId });
+                        // ユーザーへのフィードバックが難しい場合は、ログのみで対応
+                    } else {
+                        await interaction.editReply({
+                            content: messages.get('ERROR_GENERIC'),
+                            components: []
+                        });
+                    }
+                } catch (finalError) {
+                    log('ERROR', `ボタンインタラクションの最終エラー応答送信に失敗しました (remove): ${finalError.message}`, { customId: interaction.customId });
                 }
-            }
-
-        } catch (error) {
-            // このtryブロック全体での予期せぬエラー
-            console.error(`Error during config removal process (${configName}):`, error)
-            const errorMessage = messages.get('ERROR_COMMAND_INTERNAL')
-
-            // エラー発生時も応答を試みる
-            try {
-                 // ボタン応答待ちの後などで interaction が更新されている可能性があるため editReply を使う
-                 // ephemeral は true のまま
-                await interaction.editReply({ content: errorMessage, components: [], ephemeral: false })
-            } catch (replyError) {
-                 // editReply すら失敗した場合
-                console.error("Failed to send final error reply to user:", replyError)
             }
         }
     }
-}
+};

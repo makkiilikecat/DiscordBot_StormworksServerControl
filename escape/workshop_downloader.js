@@ -5,8 +5,8 @@ const fs = require('node:fs').promises // promises API を使用
 const { EmbedBuilder } = require('discord.js')
 const chalk = require('chalk') // chalkのインポート形式を修正
 // ★ config (registry.js) をインポートしてサーバーディレクトリパスを取得
-const config = require('./registry')
-const configFormat = require('./config_format')
+const config = require('../commands/sws/sub_commands/utility/registry')
+const configFormat = require('../commands/sws/sub_commands/utility/config_format')
 // utils は createPlaylistSymlinks では直接使わないので削除 (必要なら戻す)
 // const utils = require('./utils')
 

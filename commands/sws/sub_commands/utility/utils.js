@@ -7,11 +7,8 @@ const xml2js = require('xml2js')
 const config = require('./registry')
 const chalk = require('chalk')
 
-const SERVER_EXECUTABLE_NAME = config.serverExecutableName;
 const SERVER_TEMPLATE_BASE_PATH = config.templateBasePath;
 const SERVER_CONFIG_BASE_PATH = config.configBasePath;
-const MIN_PORT = config.minPort;
-const MAX_PORT = config.maxPort;
 
 // デバッグモードの設定
 const DEBUG_MODE = true // true: 詳細なデバッグログを表示, false: 基本的なログのみ
@@ -134,10 +131,6 @@ async function readMetadata(configName) {
         const result = await parser.parseStringPromise(xmlData)
         // metadata ルート要素とその中の assigned_port を数値で返すように試みる
         if (result.metadata) {
-            if (result.metadata.assigned_port && result.metadata.assigned_port[0]) {
-                 // ポート番号があれば数値に変換して追加
-                 result.metadata.assigned_port_int = parseInt(result.metadata.assigned_port[0], 10)
-            }
             return result.metadata;
         }
         return null
@@ -150,15 +143,13 @@ async function readMetadata(configName) {
     }
 }
 
-
 /**
  * metadata.xml を書き込む (または上書きする) - ポート情報付き
  * @param {string} configName 構成名
  * @param {string} creatorId 作成者の Discord User ID
- * @param {number|null} [assignedPort=null] 割り当てられたポート番号 (省略可能)
  * @returns {Promise<void>}
  */
-async function writeMetadata(configName, creatorId, assignedPort = null) {
+async function writeMetadata(configName, creatorId) {
     const metaPath = path.join(getConfigPath(configName), 'metadata.xml')
     const metadataDir = path.dirname(metaPath)
 
@@ -185,16 +176,12 @@ async function writeMetadata(configName, creatorId, assignedPort = null) {
         creation_timestamp: new Date().toISOString(),
     }
 
-    if (assignedPort !== null) {
-        metadataContent.assigned_port = assignedPort;
-    }
-
     const metadata = { metadata: metadataContent }
 
     try {
         const xml = builder.buildObject(metadata)
         await fs.writeFile(metaPath, xml)
-        console.log(`Metadata written for ${configName}: Creator ID ${creatorId}${assignedPort !== null ? `, Port ${assignedPort}` : ''}`)
+        console.log(`Metadata written for ${configName}: Creator ID ${creatorId}`)
     } catch (error) {
         console.error(`Error writing metadata for ${configName}:`, error)
         throw new Error(`metadata.xml の書き込みに失敗しました: ${configName}`)
@@ -252,117 +239,6 @@ function forceStopProcess(pid) {
         })
     })
 }
-// ---------------------------------------------------------------------------------
-
-/**
- * 現在 Bot が管理する構成で使用中のポート番号リストを取得する
- * metadata.xml と server_config.xml の両方から取得を試みる
- * @returns {Promise<number[]>} 使用中のポート番号の配列
- */
-async function getUsedPorts() {
-    const usedPorts = new Set()
-    try {
-        const entries = await fs.readdir(SERVER_CONFIG_BASE_PATH, { withFileTypes: true })
-        const configDirs = entries.filter(entry => entry.isDirectory())
-
-        for (const dir of configDirs) {
-            const configName = dir.name;
-            let portFound = false;
-
-            // 1. metadata.xml からポート取得試行
-            try {
-                 const metadata = await readMetadata(configName)
-                 if (metadata?.assigned_port_int && !isNaN(metadata.assigned_port_int)) {
-                    usedPorts.add(metadata.assigned_port_int)
-                    portFound = true
-                 }
-            } catch (metaError) {
-                 console.warn(`[WARN] Could not read metadata port for ${configName}: ${metaError.message}`)
-            }
-
-            // 2. メタデータにポートがなければ server_config.xml から取得試行
-            if (!portFound) {
-                const configFilePath = path.join(SERVER_CONFIG_BASE_PATH, configName, 'server_config.xml')
-                try {
-                    const xmlData = await fs.readFile(configFilePath, 'utf-8')
-                    const result = await parser.parseStringPromise(xmlData)
-                    if (result.server_data?.$?.port) {
-                        const port = parseInt(result.server_data.$.port, 10)
-                        if (!isNaN(port)) {
-                            usedPorts.add(port)
-                        } else {
-                            console.warn(`[WARN] Invalid port format found in ${configFilePath}: ${result.server_data.$.port}`)
-                        }
-                    }
-                } catch (error) {
-                     if (error.code !== 'ENOENT') {
-                        console.warn(`[WARN] Could not read or parse ${configFilePath}: ${error.message}`)
-                     }
-                }
-            }
-        }
-    } catch (error) {
-         console.error(`[ERROR] Error reading config directories in ${SERVER_CONFIG_BASE_PATH}: ${error.message}`)
-         throw new Error('構成ディレクトリの読み込みに失敗しました。パスが正しいか確認してください。')
-    }
-    console.log('[DEBUG] Currently used ports found:', Array.from(usedPorts))
-    return Array.from(usedPorts)
-}
-
-/**
- * 指定された範囲内で利用可能なポート番号を見つける
- * @param {number} minPort 最小ポート番号
- * @param {number} maxPort 最大ポート番号
- * @param {number[]} usedPorts 使用中のポート番号リスト
- * @returns {number|null} 利用可能なポート番号、見つからない場合は null
- */
-function findAvailablePort(minPort, maxPort, usedPorts) {
-    const usedSet = new Set(usedPorts)
-    for (let port = minPort; port <= maxPort; port++) {
-        if (!usedSet.has(port)) {
-            console.log(`[DEBUG] Found available port: ${port}`)
-            return port;
-        }
-    }
-    console.log(`[DEBUG] No available port found in range ${minPort}-${maxPort}. Used:`, usedPorts)
-    return null // 空きがない
-}
-
-
-/**
- * server_config.xml の port 属性を更新する
- * @param {string} configName 構成名
- * @param {number} newPort 新しいポート番号
- * @returns {Promise<void>}
- */
-async function updateConfigXmlPort(configName, newPort) {
-    const configFilePath = path.join(getConfigPath(configName), 'server_config.xml')
-    try {
-        const xmlData = await fs.readFile(configFilePath, 'utf-8')
-        const result = await parser.parseStringPromise(xmlData)
-
-        // server_data 要素と属性オブジェクトが存在することを確認・作成
-        if (!result.server_data) {
-            console.warn(`[WARN] <server_data> tag not found in ${configFilePath}. Creating it.`)
-            result.server_data = {}
-        }
-        if (!result.server_data.$) {
-             console.warn(`[WARN] Attributes object for <server_data> not found in ${configFilePath}. Creating it.`)
-            result.server_data.$ = {}
-        }
-
-        const oldPort = result.server_data.$.port;
-        result.server_data.$.port = String(newPort) // ポート番号を文字列として設定
-
-        const updatedXml = builder.buildObject(result)
-        await fs.writeFile(configFilePath, updatedXml)
-        console.log(`[INFO] Updated port for ${configName} from ${oldPort || '(not set)'} to ${newPort} in ${configFilePath}`)
-
-    } catch (error) {
-        console.error(`[ERROR] Error updating port for ${configName} in ${configFilePath}:`, error)
-        throw new Error(`server_config.xml のポート更新に失敗しました: ${configName}`)
-    }
-}
 
 /**
  * ファイルにデータを書き込むユーティリティ関数
@@ -390,9 +266,6 @@ module.exports = {
     readMetadata,
     writeMetadata,
     readDescription,
-    getUsedPorts,
-    findAvailablePort,
-    updateConfigXmlPort,
     forceStopProcess,
     writeFile,
 }
